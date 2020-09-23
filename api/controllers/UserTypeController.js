@@ -13,19 +13,220 @@ module.exports = {
         }
 
         try {
-            const userType = {
+            const create = {
                 name: req.body.name,
                 orderNo: req.body.orderNo,
                 note: req.body.note,
-                objectId: req.body.objectId
+                objectId: req.body.objectId,
+                createdBy: req.body.createdBy ? req.body.updateBy : null,
+                updateBy: req.body.updateBy ? req.body.createdBy : null,
             };
 
-            const createUserType = await UserType.create(userType).fetch();
+            if (!create.name) {
+                return res.json({
+                    success: false,
+                    message: 'Không tìm thấy name!'
+                });
+            }
 
-            return res.json({
-                success: true,
-                UserType: createUserType
+            if (!create.orderNo) {
+                return res.json({
+                    success: false,
+                    message: 'Không tìm thấy orderNo!'
+                });
+            }
+
+            if (!create.note) {
+                return res.json({
+                    success: false,
+                    message: 'Không tìm thấy note!'
+                });
+            }
+
+            if (!create.objectId) {
+                return res.json({
+                    success: false,
+                    message: 'Không tìm thấy objectId!'
+                });
+            }
+
+            const checkUser = await User.findOne({
+                _id: create.objectId
             });
+
+            if (!checkUser) {
+                return res.json({
+                    success: false,
+                    message: 'Không tìm thấy id User!'
+                });
+            }
+
+            const checkUserType = await UserType.findOne({
+                name: create.name,
+                isDeleted: false
+            });
+
+            if (checkUserType) {
+                return res.json({
+                    success: false,
+                    message: 'Tên userType đã tồn tại!'
+                });
+            }
+
+            const checkObjectId = await UserType.findOne({
+                objectId: create.objectId,
+                isDeleted: false
+            });
+
+            if (checkObjectId) {
+                return res.json({
+                    success: false,
+                    message: 'OjectId đã tồn tại!'
+                });
+            }
+
+            const newUserType = await UserType.create(create).fetch();
+
+            if (!newUserType || newUserType == '' || newUserType == null) {
+                return res.json({
+                    success: false,
+                    message: 'Tạo userType không thành công!'
+                });
+            } else {
+                return res.json({
+                    success: true,
+                    UserType: newUserType,
+                });
+            }
+
+        } catch (error) {
+            return res.json({
+                success: false,
+                message: error.message
+            });
+        }
+    },
+
+
+    updateUserType: async function (req, res) {
+        if (!req.body) {
+            return res.badRequest(Utils.jsonErr('Empty body'));
+        }
+
+        try {
+            const update = {
+                usertypeId: req.body.usertypeId,
+                name: req.body.name,
+                orderNo: req.body.orderNo,
+                note: req.body.note,
+                objectId: req.body.objectId,
+                updatedBy: req.body.updatedBy ? req.body.updatedBy : null
+            }
+
+            if (update.usertypeId) {
+                const checkUserType = await UserType.findOne({
+                    _id: update.usertypeId,
+                    isDeleted: false
+                });
+                if (!checkUserType) {
+                    return res.json({
+                        success: false,
+                        message: 'userType không tồn tại!'
+                    });
+                }
+            }
+
+            if (update.objectId) {
+                const checkUser = await User.findOne({
+                    _id: update.objectId
+                });
+                if (!checkUser) {
+                    return res.json({
+                        success: false,
+                        message: 'id User không tồn tại!'
+                    });
+                }
+            }
+
+            const updateUserType = await UserType.updateOne({
+                _id: update.usertypeId
+            })
+                .set({
+                    name: update.name,
+                    orderNo: update.orderNo,
+                    note: update.note,
+                    objectId: update.objectId,
+                    updateBy: update.updatedBy
+                });
+
+            if (!updateUserType || updateUserType == '' || updateUserType == null) {
+                return res.json({
+                    success: false,
+                    message: 'Cập nhập không thành công!'
+                });
+            } else {
+                return res.json({
+                    success: true,
+                    UserType: updateUserType
+                });
+            }
+
+        } catch (err) {
+            return res.json({
+                success: false,
+                message: err.message
+            });
+        }
+    },
+
+    deleteUserType: async function (req, res) {
+        if (!req.body) {
+            return res.badRequest(Utils.jsonErr('Empty body'));
+        }
+
+        try {
+            const usertypeId = req.body.usertypeId;
+            const deletedBy = req.body.deletedBy ? req.body.deletedBy : null;
+            if (!usertypeId) {
+                return res.json({
+                    success: false,
+                    message: 'usertypeId không tồn tại!'
+                });
+            }
+
+            const checkUserType = await UserType.findOne({
+                _id: usertypeId
+            });
+
+            if (!checkUserType) {
+                return res.json({
+                    success: false,
+                    message: 'UserType không tồn tại!'
+                });
+            }
+
+            const cancelUserType = await UserType.updateOne({
+                _id: usertypeId,
+                isDeleted: false
+            })
+                .set({
+                    isDeleted: true,
+                    deletedBy: deletedBy,
+                    deletedAt: Date.now()
+                });
+
+            if (!cancelUserType || cancelUserType == '' || cancelUserType == null) {
+                return res.json({
+                    success: false,
+                    message: 'Xóa userType không thành công!'
+                });
+            } else {
+                return res.json({
+                    success: true,
+                    message: 'userType đã được xóa thành công!'
+                })
+            }
+
         } catch (error) {
             return res.json({
                 success: false,
@@ -46,110 +247,44 @@ module.exports = {
         }
     },
 
-    addUserType: async function (req, res) {
+    getUserTypeById: async function (req, res) {
         if (!req.body) {
             return res.badRequest(Utils.jsonErr('Empty body'));
         }
 
         try {
-            const userType = {
-                name: req.body.name,
-                orderNo: req.body.orderNo,
-                note: req.body.note,
-                objectId: req.body.objectId
-            };
+            const usertypeId = req.body.usertypeId;
 
-            const addUserType = await UserType.create(userType).fetch();
-
-            return res.json({
-                success: true,
-                UserType: addUserType
+            const checkUserType = await UserType.findOne({
+                _id: usertypeId,
+                // isDeleted: false
             });
+
+            if (!checkUserType) {
+                return res.json({
+                    success: false,
+                    message: 'UserType không tồn tại!'
+                });
+            }
+
+            if (!usertypeId || usertypeId == '' || usertypeId == null) {
+                return res.json({
+                    success: false,
+                    message: 'Không tìm thấy UserType!'
+                });
+            } else {
+                return res.json({
+                    success: true,
+                    UserType: checkUserType
+                })
+            }
+
         } catch (error) {
             return res.json({
                 success: false,
                 message: error.message
-            });
+            })
         }
     },
 
-
-    updateUserType: async function (req, res) {
-        var { idUserType, name, orderNo, note, objectId } = req.body;
-
-        var data = await UserType.findOne({ _id: idUserType });
-
-        if (data == undefined || data == "" || data == null) {
-            return res.json({ error: true, message: 'loi !' });
-        }
-
-        if (!name) {
-            name = data.name;
-        }
-        if (!orderNo) {
-            orderNo = data.orderNo;
-        }
-        if (!note) {
-            note = data.note;
-        }
-        if (!objectId) {
-            objectId = data.objectId;
-        }
-
-        console.log(data);
-        let a = await UserType.updateOne({ id: data.id }).set({
-            //isDeleted: true,
-            name: name,
-            orderNo: orderNo,
-            note: note,
-            objectId: objectId
-        });
-
-        if (a) {
-            return res.json({ error: false, data: a });
-        }
-        else {
-            return res.json({ error: true, message: 'loi updata !' });
-        }
-    },
-
-    // deleteUserType: async function (req, res) {
-
-    //     var { idUserType, name, orderNo, note, objectId } = req.body;
-
-    //     var data = await UserType.findOne({ _id: idUserType });
-
-    //     if (data == undefined || data == "" || data == null) {
-    //         return res.json({ error: true, message: 'loi !' });
-    //     }
-
-    //     if (!name) {
-    //         name = data.name;
-    //     }
-    //     if (!orderNo) {
-    //         orderNo = data.orderNo;
-    //     }
-    //     if (!note) {
-    //         note = data.note;
-    //     }
-    //     if (!objectId) {
-    //         objectId = data.objectId;
-    //     }
-
-    //     console.log(data);
-    //     let a = await UserType.updateOne({ id: data.id }).set({
-    //         name: name,
-    //         orderNo: orderNo,
-    //         note: note,
-    //         objectId: objectId
-    //     });
-    //     isDeleted: false;
-
-    //     if (a) {
-    //         return res.json({ error: false, data: a });
-    //     }
-    //     else {
-    //         return res.json({ error: true, message: 'loi updata !' });
-    //     }
-    // }
 };

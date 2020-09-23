@@ -70,8 +70,8 @@ module.exports = {
              ****************************************************************************/
             // ssl: true,
             adapter: 'sails-mongo',
-             //url: 'mongodb://dvs_cuong:Abc.123@14.161.1.28:27017/GasTracking'
-            url: 'mongodb://dvscuong:Abc.123@14.161.1.28:27017/GasTracking_GasSouth?socketTimeoutMS=600000'
+             url: 'mongodb://dvs_cuong:Abc.123@14.161.1.28:27017/GasTracking'
+            //url: 'mongodb://dvscuong:Abc.123@14.161.1.28:27017/GasTracking_GasSouth?socketTimeoutMS=600000'
         },
 
     },
