@@ -1,0 +1,73 @@
+/**
+ * CylinderImexController
+ *
+ * @description :: Server-side actions for handling incoming requests.
+ * @help        :: See https://sailsjs.com/docs/concepts/actions
+ */
+
+module.exports = {
+  
+    import: async function (req, res) {
+        if (Object.keys(req.body).length === 0) {
+            return res.badRequest(Utils.jsonErr('Empty body'));
+        }
+
+        const {
+            idImex,
+            cylinders,
+            status,
+            condition,
+            userId,
+        } = req.body
+
+        if (!idImex) {
+          return res.badRequest(Utils.jsonErr('idImex is required'));
+        }
+
+        if (cylinders.length===0) {
+            return res.badRequest(Utils.jsonErr('Cylinders is required'));
+        }
+
+        if (!status) {
+            return res.badRequest(Utils.jsonErr('Status is required'));
+        }
+
+        if (!condition) {
+            return res.badRequest(Utils.jsonErr('Condition is required'));
+        }
+
+        if (!userId) {
+            return res.badRequest(Utils.jsonErr('UserId is required'));
+        }
+
+        try {
+            const userInfor = await User.findOne({id: userId})
+            if (!userInfor) {
+                return res.json({
+                    status: false,
+                    resCode: 'ERROR-00008',
+                    data: {},
+                    message: 'Không tìm thấy thông tin người dùng trong hệ thống'
+                })
+            }
+
+            const resultImex = CylinderImex.create({
+                idImex,
+                typeImex,
+                cylinders,
+                
+            })            
+        }
+        catch(error) {
+            return res.json({
+                status: false,
+                resCode: 'CATCH-00004',
+                data: {
+                    error: error.message
+                },
+                message: 'Gặp lỗi khi tạo bản ghi thanh lý bình'
+            })
+        }        
+    },
+};
+

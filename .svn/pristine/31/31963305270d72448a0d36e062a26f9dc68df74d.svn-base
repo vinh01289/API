@@ -1,0 +1,2531 @@
+/**
+ * CylinderImexController
+ *
+ * @description :: Server-side actions for handling incoming requests.
+ * @help        :: See https://sailsjs.com/docs/concepts/actions
+ */
+
+const USER_TYPE = require('../constants/UserTypes');
+const USER_ROLE = require('../constants/UserRoles');
+
+module.exports = {
+
+    // Tính [action] của [target] theo ngày
+    // Có thể phân loại bình theo [searchs]
+    getExport: async function (req, res) {
+        if (Object.keys(req.query).length === 0) {
+            return res.badRequest(Utils.jsonErr('Empty body'));
+        }
+
+        const {
+            target,     // Id
+            action,     // isIn: ['CREATED_CYLINDER', 'IN_CYLINDER',
+                        // 'OUT_CYLINDER', 'EXPORT_CYLINDER',
+                        // 'IMPORT_CYLINDER', 'EXPORT_CELL_CYLINDER',
+                        // 'IMPORT_CELL_CYLINDER', 'SALE_CYLINDER',
+                        // 'TURN_BACK_CYLINDER']
+            startDate,  // ISODate
+            endDate,    // ISODate
+            statisticalType,    // isIn: ['byItself', 'byItsChildren']
+            // Search theo danh sách loại
+            // [
+            //     {
+            //         type: {isIn: ['WEIGHT', 'COLOR', 'VALVE', 'CLASS']}
+            //         contents: {isIn: [...]}
+            //     },
+            //     {...}
+            // ]
+            searchs,
+        } = req.query
+
+        let {
+            // Nếu thống kê các đơn vị con
+            // Sử dụng param dưới để lọc loại đơn vị con cần tính
+            // if (Region) => Region, ...đơn vị con
+            // if (ALL) => ['Warehouse', 'Fixer', 'General', 'Agency']
+            typesOfChildren,    // isIn: ['ALL', 'Region', 'Warehouse', 'Fixer', 'General', 'Agency']
+        } = req.query
+
+        if (!target) {
+            return res.badRequest(Utils.jsonErr('target is required'));
+        }
+
+        if (!action) {
+            return res.badRequest(Utils.jsonErr('action is required'));
+        }
+        else {
+            const _Action = [
+                'CREATED_CYLINDER', 'IN_CYLINDER',
+                'OUT_CYLINDER', 'EXPORT_CYLINDER',
+                'IMPORT_CYLINDER', 'EXPORT_CELL_CYLINDER',
+                'IMPORT_CELL_CYLINDER', 'SALE_CYLINDER',
+                'TURN_BACK_CYLINDER'
+            ]
+            if (!_Action.includes(action)) {
+                return res.badRequest(Utils.jsonErr('action is wrong'));
+            }
+        }
+
+        if (!startDate) {
+            return res.badRequest(Utils.jsonErr('startDate is required'));
+        }
+
+        if (!endDate) {
+            return res.badRequest(Utils.jsonErr('endDate is required'));
+        }
+
+        if (!statisticalType) {
+            return res.badRequest(Utils.jsonErr('statisticalType is required'));
+        }
+        else {
+            const typeStatistic = ['byItself', 'byItsChildren']
+            if (!typeStatistic.includes(statisticalType)) {
+                return res.badRequest(Utils.jsonErr('statisticalType is wrong'));
+            }
+
+            // Trường hợp thống kê đơn vị con
+            if (statisticalType === 'byItsChildren') {
+                if (!typesOfChildren) {
+                    return res.badRequest(Utils.jsonErr('typesOfChildren is required'));
+                }
+                else {
+                    // Kiểm tra typesOfChildren là array
+                    if (!Array.isArray(typesOfChildren)) {
+                        return res.badRequest(Utils.jsonErr('statisticalType is wrong type'));
+                    }
+                    // Kiểm tra typesOfChildren array rỗng
+                    if (typesOfChildren.length === 0) {
+                        return res.badRequest(Utils.jsonErr('typesOfChildren is required'));
+                    }
+
+                    const typeChildren = ['ALL', 'Region', 'Warehouse', 'Fixer', 'General', 'Agency']
+                    
+                    for (let i = 0; i<typesOfChildren.length; i++) {
+                        if (!typeChildren.includes(typesOfChildren[i])) {
+                            return res.badRequest(Utils.jsonErr('typesOfChildren is wrong type'));
+                        }
+                    }                   
+                }
+            }
+
+            // Trường hợp thống kê chính nó
+            if (statisticalType === 'byItself') {
+                // Yêu cầu có thông tin [searchs]
+                if (!searchs) {
+                    return res.badRequest(Utils.jsonErr('searchs is required'));
+                }
+                // Kiểm tra [searchs] là array
+                if (!Array.isArray(searchs)) {
+                    return res.badRequest(Utils.jsonErr('searchs is wrong type'));                        
+                }
+                // // Kiểm tra thành phần property của [searchs]
+                // if (!searchs[i].hasOwnProperty('type') || !searchs[i].hasOwnProperty('contents')) {
+                //     return res.badRequest(Utils.jsonErr('property of searchs is wrong '));  
+                // }
+                // --- Cần kiểm tra nữa và viết hàm riêng ---
+            }
+        }
+
+        try {
+            const userInfor = await User.findOne({ id: target })
+            if (!userInfor) {
+                return res.json({
+                    status: false,
+                    resCode: 'ERROR-00081',
+                    data: {},
+                    message: 'Không tìm thấy thông tin người dùng trong hệ thống'
+                })
+            }
+
+            let _data = []
+
+            // Thống kê chính nó
+            if (statisticalType === 'byItself') {
+
+                _data = {
+                    _key: searchs[0].type,
+                    success: false,
+                    message: '',
+                }
+
+                // // Danh sách các loại bình
+                // const cylinderTypes = ['CYL12KG', 'CYL12KGCO', 'CYL45KG', 'CYL50KG']
+
+                // const searchs = [
+                //     {
+                //         type: 'WEIGHT',
+                //         contents: ['CYL12KG', 'CYL12KGCO', 'CYL45KG', 'CYL50KG'],
+                //     },
+                //     {
+                //         type: 'COLOR',
+                //         contents: ['Xám', 'Đỏ', 'Vàng', 'Cam', 'Shell', 'VT', 'Petro'],
+                //     },
+                //     {
+                //         type: 'VALVE',
+                //         contents: ['POL', 'COMPACT', '1 VAN', '2 VAN'],
+                //     },
+                // ]
+
+                // Search cho loại bình (search.type = WEIGHT) đã có collectin danh mục loại bình
+                // Cần search cho các loại khác (COLOR, VALVE)
+                let searchContents = searchs[0].contents
+                const parent = await getRootParent(userInfor.id)
+
+                // Danh sách các loại bình
+                if (searchs[0].type === 'WEIGHT' && searchs[0].contents.includes('ALL')) {
+                    const foundType = await CategoryCylinder.find({
+                        createdBy: parent,
+                        isDeleted: false
+                    })
+
+                    if (foundType.length > 0) {
+                        searchContents = []
+                        foundType.forEach(type => {
+                            searchContents.push({
+                                code: type.code,
+                                name: type.name,
+                            })
+                        });
+                    }
+                }
+
+                // Thống kê từng loại bình
+                const cylinders = await Promise.all(searchContents.map(async searchContent => {
+                    const isReturnCylinders = true
+                    let countData = await _countTotalActionCylinderByType(
+                        target,
+                        action,
+                        startDate,
+                        endDate,
+                        searchs[0].type,
+                        searchContent.code,
+                        isReturnCylinders,
+                    )
+
+                    if (countData.success) {
+                        if (searchs.length > 1) {
+                            // Sau khi search xong cắt bỏ điều kiện search đầu tiên
+                            const newSearchs = searchs.slice(1)
+                            countData.detail = await _filterCylindersBySearchType(countData.cylinders, newSearchs)
+                        }
+                    }
+                    
+                    delete countData.cylinders
+
+                    return countData
+                }))
+
+                // Cần kiểm tra lại cylinders[i].success
+
+                _data.success = true
+                _data.message = 'Thành công'
+                _data.cylinders = cylinders
+            }
+            
+            // Thống kê đơn vị con
+            if (statisticalType === 'byItsChildren') {
+                // !!! Cần loại bỏ trùng trong array typesOfChildren
+                
+                // Trường hợp công ty mẹ thống kê xem số liệu chi nhánh
+                if (typesOfChildren.includes('Region')) {
+                    typesOfChildren = ['Region']
+
+                    _data = await Promise.all(typesOfChildren.map( async type => {
+                        let returnData = {
+                            type: type,
+                            list: []
+                        }
+
+                        // Tìm các chi nhánh vùng và nhà máy sửa chữa
+                        const listRegion = await User.find({
+                            isChildOf: target,
+                            userType: { in: ['Region', 'Fixer'] },
+                            userRole: 'SuperAdmin',
+                            isDeleted: false,
+                        })
+
+                        // Cần kiểm tra listRegion.length > 0
+
+                        const _dataRegion = await Promise.all(listRegion.map(async region => {
+                            let returnRegionData = {
+                                success: false,
+                                name: '',
+                                id: '',
+                                count: 0,
+                                message: '',                                
+                            }
+
+                            let criteria = {
+                                isChildOf: region.id,
+                                userRole: { in: ['SuperAdmin', 'Owner'] },
+                            }
+
+                            // Tìm các đơn vị con
+                            const childs = await User.find(criteria)
+
+                            if (childs.length > 0) {
+                                let countRegion = 0
+                                const _dataChilds = await Promise.all(childs.map(async child => {
+                                    const isReturnCylinders = false
+                                    let countData = await _countTotalActionCylinder(
+                                        child.id,
+                                        action,
+                                        startDate,
+                                        endDate,
+                                        isReturnCylinders,
+                                    )
+
+                                    // // Thêm thông tin ID và tên của đơn vị con vào từng Object trả ra
+                                    // countData.id = child.id
+                                    // countData.name = child.name
+
+                                    // Mẫu
+                                    // const searchs = [
+                                    //     {
+                                    //         type: 'COLOR',
+                                    //         contents: ['Xám', 'Đỏ', 'Vàng', 'Cam', 'Shell', 'VT', 'Petro'],
+                                    //     },
+                                    //     {
+                                    //         type: 'VALVE',
+                                    //         contents: ['POL', 'COMPACT', '1 VAN', '2 VAN'],
+                                    //     },
+                                    // ]
+
+                                    if (searchs) {
+                                        if (searchs.length > 0 && isReturnCylinders) {
+                                            countData.detail = await _filterCylindersBySearchType(countData.cylinders, searchs)
+                                        }
+                                    }
+
+                                    delete countData.cylinders
+
+                                    return countData
+                                }))
+
+                                _dataChilds.forEach(element => {
+                                    if (element.success) countRegion += element.count
+                                });
+
+                                returnRegionData.success = true
+                                returnRegionData.name = region.name
+                                returnRegionData.count = countRegion
+                                returnRegionData.message = 'Success'
+                            }
+                            else {
+                                returnRegionData.success = true
+                                returnRegionData.name = region.name
+                                returnRegionData.message = 'Not found any subsidiary'
+                            }
+
+                            return returnRegionData
+                        }))
+
+                        returnData.list = _dataRegion
+
+                        return returnData
+                    }))
+                }
+                // Xem thống kê các trường hợp còn lại
+                else {
+                    if (typesOfChildren.includes('ALL')) {
+                        typesOfChildren = ['Warehouse', 'Fixer', 'General', 'Agency']
+                    }
+
+                    _data = await Promise.all(typesOfChildren.map(async type => {
+                        let returnData = {
+                            type: type,
+                            list: []
+                        }
+                        let criteria = {
+                            isChildOf: userInfor.id,
+                        }
+
+                        switch (type) {
+                            case 'Warehouse':
+                                criteria = Object.assign({
+                                    userType: { in: ['Factory'] },
+                                    userRole: { in: ['Owner'] },
+                                }, criteria);
+                                break;
+                            case 'Fixer':
+                                criteria = Object.assign({
+                                    userType: { in: ['Fixer'] },
+                                    userRole: { in: ['SuperAdmin'] },
+                                }, criteria);
+                                break;
+                            case 'General':
+                                criteria = Object.assign({
+                                    userType: { in: ['General'] },
+                                    userRole: { in: ['SuperAdmin'] },
+                                }, criteria);
+                                break;
+                            case 'Agency':
+                                criteria = Object.assign({
+                                    userType: { in: ['Agency'] },
+                                    userRole: { in: ['SuperAdmin'] },
+                                }, criteria);
+                                break;
+                            default:
+                                break;
+                        }
+
+                        // Tìm các đơn vị con
+                        const childs = await User.find(criteria)
+
+                        if (childs.length > 0) {
+                            const _data = await Promise.all(childs.map(async child => {
+                                const isReturnCylinders = true
+                                let countData = await _countTotalActionCylinder(
+                                    child.id,
+                                    action,
+                                    startDate,
+                                    endDate,
+                                    isReturnCylinders,
+                                )
+
+                                // Thêm thông tin ID và tên của đơn vị con vào từng Object trả ra
+                                countData.id = child.id
+                                countData.name = child.name
+
+                                // Mẫu
+                                // const searchs = [
+                                //     {
+                                //         type: 'COLOR',
+                                //         contents: ['Xám', 'Đỏ', 'Vàng', 'Cam', 'Shell', 'VT', 'Petro'],
+                                //     },
+                                //     {
+                                //         type: 'VALVE',
+                                //         contents: ['POL', 'COMPACT', '1 VAN', '2 VAN'],
+                                //     },
+                                // ]
+
+                                if (searchs) {
+                                    if (searchs.length > 0) {
+                                        countData.detail = await _filterCylindersBySearchType(countData.cylinders, searchs, child.id)
+                                    }
+                                }
+
+                                delete countData.cylinders
+
+                                return countData
+                            }))
+
+                            returnData.list = _data
+                        }
+
+                        return returnData
+                    }))
+
+                }
+            }
+
+            return res.json({
+                status: true,
+                resCode: 'SUCCESS-00012',
+                data: _data,
+                message: 'Lấy thông tin thống kê thành công'
+            })
+            
+        }
+        catch (error) {
+            return res.json({
+                status: false,
+                resCode: 'CATCH-00001',
+                data: {
+                    error: error.message
+                },
+                message: 'Gặp lỗi khi lấy thông tin'
+            })
+        }
+
+    },
+
+    // Tính tồn kho của user theo thời gian
+    getCurrentInventory: async function (req, res) {
+        if (Object.keys(req.query).length === 0) {
+            return res.badRequest(Utils.jsonErr('Empty body'));
+        }
+
+        const {
+            target,     // Id
+            // action,     // isIn: ['CREATED_CYLINDER', 'IN_CYLINDER',
+            //             // 'OUT_CYLINDER', 'EXPORT_CYLINDER',
+            //             // 'IMPORT_CYLINDER', 'EXPORT_CELL_CYLINDER',
+            //             // 'IMPORT_CELL_CYLINDER', 'SALE_CYLINDER',
+            //             // 'TURN_BACK_CYLINDER']
+            // startDate,  // ISODate            
+            statisticalType,    // isIn: ['byItself', 'byItsChildren']
+            // Search theo danh sách loại
+            // [
+            //     {
+            //         type: {isIn: ['WEIGHT', 'COLOR', 'VALVE', 'CLASS']}
+            //         contents: {isIn: [...]}
+            //     },
+            //     {...}
+            // ]
+            searchs,
+        } = req.query
+
+        let {
+            endDate,    // ISODate
+            // Nếu thống kê các đơn vị con
+            // Sử dụng param dưới để lọc loại đơn vị con cần tính
+            typesOfChildren,    // isIn: ['ALL', 'Region', 'Warehouse', 'Fixer', 'General', 'Agency']
+        } = req.query
+
+        if (!target) {
+            return res.badRequest(Utils.jsonErr('target is required'));
+        }
+
+        // if (!action) {
+        //     return res.badRequest(Utils.jsonErr('action is required'));
+        // }
+        // else {
+        //     const _Action = [
+        //         'CREATED_CYLINDER', 'IN_CYLINDER',
+        //         'OUT_CYLINDER', 'EXPORT_CYLINDER',
+        //         'IMPORT_CYLINDER', 'EXPORT_CELL_CYLINDER',
+        //         'IMPORT_CELL_CYLINDER', 'SALE_CYLINDER',
+        //         'TURN_BACK_CYLINDER'
+        //     ]
+        //     if (!_Action.includes(action)) {
+        //         return res.badRequest(Utils.jsonErr('action is wrong'));
+        //     }
+        // }
+
+        // if (!startDate) {
+        //     return res.badRequest(Utils.jsonErr('startDate is required'));
+        // }
+
+        // if (!endDate) {
+        //     return res.badRequest(Utils.jsonErr('endDate is required'));
+        // }
+
+        if (!statisticalType) {
+            return res.badRequest(Utils.jsonErr('statisticalType is required'));
+        }
+        else {
+            const typeStatistic = ['byItself', 'byItsChildren']
+            if (!typeStatistic.includes(statisticalType)) {
+                return res.badRequest(Utils.jsonErr('statisticalType is wrong'));
+            }
+
+            // Trường hợp thống kê đơn vị con
+            if (statisticalType === 'byItsChildren') {
+                if (!typesOfChildren) {
+                    return res.badRequest(Utils.jsonErr('typesOfChildren is required'));
+                }
+                else {
+                    // Kiểm tra typesOfChildren là array
+                    if (!Array.isArray(typesOfChildren)) {
+                        return res.badRequest(Utils.jsonErr('statisticalType is wrong'));
+                    }
+                    // Kiểm tra typesOfChildren array rỗng
+                    if (typesOfChildren.length === 0) {
+                        return res.badRequest(Utils.jsonErr('typesOfChildren is required'));
+                    }
+
+                    const typeChildren = ['ALL', 'Region', 'Warehouse', 'Fixer', 'General', 'Agency']
+                    
+                    for (let i = 0; i<typesOfChildren.length; i++) {
+                        if (!typeChildren.includes(typesOfChildren[i])) {
+                            return res.badRequest(Utils.jsonErr('typesOfChildren is wrong'));
+                        }
+                    }                   
+                }
+            }
+
+            // Trường hợp thống kê chính nó
+            if (statisticalType === 'byItself') {
+                // Yêu cầu có thông tin [searchs]
+                if (!searchs) {
+                    return res.badRequest(Utils.jsonErr('searchs is required'));
+                }
+                // Kiểm tra [searchs] là array
+                if (!Array.isArray(searchs)) {
+                    return res.badRequest(Utils.jsonErr('searchs is wrong type'));                        
+                }
+                // // Kiểm tra thành phần property của [searchs]
+                // if (!searchs[i].hasOwnProperty('type') || !searchs[i].hasOwnProperty('contents')) {
+                //     return res.badRequest(Utils.jsonErr('property of searchs is wrong '));  
+                // }
+                // --- Cần kiểm tra nữa và viết hàm riêng ---
+            }
+        }
+
+        try {
+            const userInfor = await User.findOne({ id: target })
+            if (!userInfor) {
+                return res.json({
+                    status: false,
+                    resCode: 'ERROR-00082',
+                    data: {},
+                    message: 'Không tìm thấy thông tin người dùng trong hệ thống'
+                })
+            }
+
+            if (!endDate) {
+                // Tìm tồn kho đến thời điểm hiện tại
+                endDate = new Date().toISOString()
+            }
+
+            let _data = []
+
+            // Thống kê chính nó
+            if (statisticalType === 'byItself') {
+                _data = {
+                    _key: searchs[0].type,
+                    success: false,
+                    message: '',
+                }
+
+                // Search cho loại bình (search.type = WEIGHT) đã có collectin danh mục loại bình
+                // Cần search cho các loại khác (COLOR, VALVE)
+                let searchContents = searchs[0].contents
+                const parent = await getRootParent(userInfor.id)
+
+                // Danh sách các loại bình
+                if (searchs[0].type === 'WEIGHT' && searchs[0].contents.includes('ALL')) {
+                    const foundType = await CategoryCylinder.find({
+                        createdBy: parent,
+                        isDeleted: false
+                    })
+
+                    if (foundType.length > 0) {
+                        searchContents = []
+                        foundType.forEach(type => {
+                            searchContents.push(type.code)
+                        });
+                    }
+                }
+
+                // Thống kê từng loại
+                const cylinders = await Promise.all(searchContents.map(async searchContent => {
+                    const isReturnCylinders = true
+                    let countData = await _countTotalCylinderInWarehouseByType(
+                        target,
+                        endDate,
+                        searchs[0].type,
+                        searchContent,
+                        isReturnCylinders,
+                    )
+
+                    if (countData.success) {
+                        if (searchs.length > 1) {
+                            // Sau khi search xong cắt bỏ điều kiện search đầu tiên
+                            const newSearchs = searchs.slice(1)
+                            countData.detail = await _filterCylindersBySearchType(countData.cylinders, newSearchs, target)
+                        }
+                    }
+                    
+                    delete countData.cylinders
+
+                    return countData
+                }))
+
+                // Cần kiểm tra lại cylinders[i].success
+
+                _data.success = true
+                _data.message = 'Thành công'
+                _data.cylinders = cylinders
+            }
+
+            // Thống kê các đơn vị con
+            if (statisticalType === 'byItsChildren') {
+                // !!! Cần loại bỏ trùng trong array typesOfChildren
+
+                // Trường hợp công ty mẹ thống kê xem số liệu chi nhánh
+                if (typesOfChildren.includes('Region')) {
+                    typesOfChildren = ['Region']
+
+                    _data = await Promise.all(typesOfChildren.map( async type => {
+                        let returnData = {
+                            type: type,
+                            list: []
+                        }
+
+                        // Tìm các chi nhánh vùng và nhà máy sửa chữa
+                        const listRegion = await User.find({
+                            isChildOf: target,
+                            userType: { in: ['Region', 'Fixer'] },
+                            userRole: 'SuperAdmin',
+                            isDeleted: false,
+                        })
+
+                        // Cần kiểm tra listRegion.length > 0
+
+                        const _dataRegion = await Promise.all(listRegion.map(async region => {
+                            let returnRegionData = {
+                                success: false,
+                                name: '',
+                                id: '',
+                                count: 0,
+                                message: '',                                
+                            }
+
+                            let criteria = {
+                                isChildOf: region.id,
+                                userRole: { in: ['SuperAdmin', 'Owner'] },
+                            }
+
+                            // Nếu là chi nhánh/công ty con thì tìm các đơn vị con của nó
+                            if (region.userType === 'Region') {
+                                const childs = await User.find(criteria)
+
+                                if (childs.length > 0) {
+                                    let countRegion = 0
+                                    const _dataChilds = await Promise.all(childs.map(async child => {
+                                        const isReturnCylinders = false
+                                        let countData = await _countTotalCylinderInWarehouse(
+                                            child.id,
+                                            endDate,
+                                            isReturnCylinders,
+                                        )
+
+                                        // // Thêm thông tin ID và tên của đơn vị con vào từng Object trả ra
+                                        // countData.id = child.id
+                                        // countData.name = child.name
+
+                                        // Mẫu
+                                        // const searchs = [
+                                        //     {
+                                        //         type: 'COLOR',
+                                        //         contents: ['Xám', 'Đỏ', 'Vàng', 'Cam', 'Shell', 'VT', 'Petro'],
+                                        //     },
+                                        //     {
+                                        //         type: 'VALVE',
+                                        //         contents: ['POL', 'COMPACT', '1 VAN', '2 VAN'],
+                                        //     },
+                                        // ]
+
+                                        if (searchs) {
+                                            if (searchs.length > 0 && isReturnCylinders) {
+                                                countData.detail = await _filterCylindersBySearchType(countData.cylinders, searchs, child.id)
+                                            }
+                                        }
+
+                                        delete countData.cylinders
+
+                                        return countData
+                                    }))
+
+                                    _dataChilds.forEach(element => {
+                                        if (element.success) countRegion += element.count
+                                    });
+
+                                    returnRegionData.success = true
+                                    returnRegionData.name = region.name
+                                    returnRegionData.count = countRegion
+                                    returnRegionData.message = 'Success'
+                                }
+                                else {
+                                    returnRegionData.success = true
+                                    returnRegionData.name = region.name
+                                    returnRegionData.message = 'Not found any subsidiary'
+                                }
+                            }
+                            // Nếu là nhà máy sửa chữa thì thống kê chính nó
+                            if (region.userType === 'Fixer') {
+                                let countRegion = 0
+                                const isReturnCylinders = false
+
+                                const countData = await _countTotalCylinderInWarehouse(
+                                    region.id,
+                                    endDate,
+                                    isReturnCylinders,
+                                )
+
+                                if (searchs) {
+                                    if (searchs.length > 0 && isReturnCylinders) {
+                                        countData.detail = await _filterCylindersBySearchType(countData.cylinders, searchs)
+                                    }
+                                }
+
+                                delete countData.cylinders
+
+                                if (countData.success) {
+                                    countRegion = countData.count
+
+                                    returnRegionData.success = true
+                                    returnRegionData.name = region.name
+                                    returnRegionData.count = countRegion
+                                    returnRegionData.message = 'Success'
+                                }
+                                else {
+                                    returnRegionData.success = true
+                                    returnRegionData.name = region.name
+                                    returnRegionData.message = countData.message
+                                }
+                            }
+
+                            return returnRegionData
+                        }))
+
+                        returnData.list = _dataRegion
+
+                        return returnData
+                    }))
+                }
+                // Xem thống kê các trường hợp còn lại
+                else {
+                    if (typesOfChildren.includes('ALL')) {
+                        typesOfChildren = ['Warehouse', 'Fixer', 'General', 'Agency']
+                    }
+    
+                    _data = await Promise.all(typesOfChildren.map( async type => {
+                        let returnData = {
+                            type: type,
+                            list: []
+                        }
+                        let criteria = {
+                            isChildOf: userInfor.id,
+                        }
+        
+                        switch (type) {
+                            case 'Warehouse':
+                                criteria = Object.assign({
+                                    userType: { in: ['Factory'] },
+                                    userRole: { in: ['Owner'] },
+                                }, criteria);
+                                break;
+                            case 'Fixer':
+                                criteria = Object.assign({
+                                    userType: { in: ['Fixer'] },
+                                    userRole: { in: ['SuperAdmin'] },
+                                }, criteria);
+                                break;
+                            case 'General':
+                                criteria = Object.assign({
+                                    userType: { in: ['General'] },
+                                    userRole: { in: ['SuperAdmin'] },
+                                }, criteria);
+                                break;
+                            case 'Agency':
+                                criteria = Object.assign({
+                                    userType: { in: ['Agency'] },
+                                    userRole: { in: ['SuperAdmin'] },
+                                }, criteria);
+                                break;
+                            default:
+                                break;
+                        }
+        
+                        // Tìm các đơn vị con
+                        const childs = await User.find(criteria)
+        
+                        if (childs.length > 0) {
+                            const _data = await Promise.all(childs.map(async child => {
+                                const isReturnCylinders = true
+                                let countData = await _countTotalCylinderInWarehouse(
+                                    child.id,
+                                    endDate,
+                                    isReturnCylinders,
+                                )
+            
+                                // Thêm thông tin ID và tên của đơn vị con vào từng Object trả ra
+                                countData.id = child.id
+                                countData.name = child.name
+        
+                                // Mẫu
+                                // const searchs = [
+                                //     {
+                                //         type: 'COLOR',
+                                //         contents: ['Xám', 'Đỏ', 'Vàng', 'Cam', 'Shell', 'VT', 'Petro'],
+                                //     },
+                                //     {
+                                //         type: 'VALVE',
+                                //         contents: ['POL', 'COMPACT', '1 VAN', '2 VAN'],
+                                //     },
+                                // ]
+                                
+                                if (searchs) {
+                                    if (searchs.length > 0 && isReturnCylinders) {
+                                        countData.detail = await _filterCylindersBySearchType(countData.cylinders, searchs, child.id)
+                                    }
+                                }                            
+                                
+                                delete countData.cylinders
+            
+                                return countData
+                            }))
+        
+                            returnData.list = _data
+                        }
+        
+                        return returnData
+                    }))
+                }                
+            }            
+
+            return res.json({
+                status: true,
+                resCode: 'SUCCESS-00012',
+                data: _data,
+                message: 'Lấy thông tin thống kê thành công'
+            })
+        }
+        catch (error) {
+            return res.json({
+                status: false,
+                resCode: 'CATCH-00002',
+                data: {
+                    error: error.message
+                },
+                message: 'Gặp lỗi khi lấy thông tin tồn kho'
+            })
+        }
+
+    },
+
+    // Thống kê
+    getStatistics: async function (req, res) {
+        if (Object.keys(req.query).length === 0) {
+            return res.badRequest(Utils.jsonErr('Empty body'));
+        }
+
+        const {
+            target,     // Id
+            startDate,  // ISODate
+            endDate,    // ISODate
+            statisticalType,    // isIn: ['byItself', 'byItsChildren']
+            manufacture,
+        } = req.query
+        // searchs,
+
+        
+        let {
+            // Nếu thống kê các đơn vị con
+            // Sử dụng param dưới để lọc loại đơn vị con cần tính
+            // if (Region) => Region, ...đơn vị con
+            // if (ALL) => ['Warehouse', 'Fixer', 'General', 'Agency']
+            typesOfChildren,    // isIn: ['ALL', 'Region', 'Warehouse', 'Fixer', 'General', 'Agency']
+            actions,    // []
+        } = req.query
+
+        if (!target) {
+            return res.badRequest(Utils.jsonErr('target is required'));
+        }
+
+        if (!startDate) {
+            return res.badRequest(Utils.jsonErr('startDate is required'));
+        }
+
+        if (!endDate) {
+            return res.badRequest(Utils.jsonErr('endDate is required'));
+        }
+
+        if (!statisticalType) {
+            return res.badRequest(Utils.jsonErr('statisticalType is required'));
+        }
+        else {
+            const type = ['byItself', 'byItsChildren']
+            if (!type.includes(statisticalType)) {
+                return res.badRequest(Utils.jsonErr('statisticalType is wrong'));
+            }
+        }
+
+        try {
+
+            const userInfor = await User.findOne({ id: target })
+            if (!userInfor) {
+                return res.json({
+                    status: false,
+                    resCode: 'ERROR-00083',
+                    data: {},
+                    message: 'Không tìm thấy thông tin người dùng trong hệ thống'
+                })
+            }
+
+            let returnData = {
+            }
+
+            // // Danh sách [action]
+            // const actions = ['CREATED_CYLINDER', 'OUT_CYLINDER', 'TURN_BACK_CYLINDER', 'INVENTORY_CYLINDER']
+            actions.push('INVENTORY_CYLINDER')
+
+            let searchs = [{
+                type: 'CLASS',
+                contents: ['New', 'Old'],
+            }]
+            let _searchContents = []
+
+            const parent = await getRootParent(userInfor.id)
+            // Tìm danh sách các loại bình
+            const foundType = await CategoryCylinder.find({
+                createdBy: parent,
+                isDeleted: false
+            })
+
+            if (foundType.length > 0) {
+                foundType.forEach(type => {
+                    _searchContents.push(type.code)
+                });
+
+                searchs[1] = {
+                    type: 'WEIGHT',
+                    contents: _searchContents,
+                }
+            }
+            else {
+                return res.badRequest(Utils.jsonErr('Not found any cylinderType'));
+            }
+
+            // --- [Rất quan trọng]: searchs --- //
+
+            // Tạo cấu trúc dữ liệu trả về
+            await Promise.all(actions.map(async action => {
+                try {
+                    Object.assign(returnData, {
+                        [action]: {
+                            count: 0,
+                        }
+                    })
+
+                    const detail = await _createDataStructureBySearch(searchs)
+                    returnData[action].detail = detail
+                }
+                catch (error) {
+                    console.log(error.message)
+                }
+            }));
+
+            // Loại bỏ INVENTORY_CYLINDER khỏi danh sách action
+            const indexInven = actions.findIndex(action => action === 'INVENTORY_CYLINDER')
+            actions.splice(indexInven, 1)
+
+
+            // --- TH1: Thống kê số liệu của chính nó
+            if (statisticalType === 'byItself') {
+
+                // // // Trường hợp có phân chia theo thương hiệu bình
+                if (manufacture) {
+                    // Thống kê tổng số ===================================
+                    // Tồn kho
+                    const searchManufacture = [{
+                        type: 'MANUFACTURE',
+                        contents: [manufacture]
+                    }]
+                    
+                    const isReturnCylinders = true
+                    let countDataInventory = await _countTotalCylinderInWarehouse(
+                        target,
+                        endDate,
+                        isReturnCylinders,
+                    )
+
+                    if (countDataInventory.success) {                        
+                        const filterCylinder = await _filterCylindersBySearchType(countDataInventory.cylinders, searchManufacture)
+                        returnData['INVENTORY_CYLINDER'].count += filterCylinder.cylinders[0].count
+                    }
+
+                    // Thống kê từng loại bình
+                    const cylinders = await Promise.all(searchs[0].contents.map(async searchContent => {
+                        const isReturnCylinders = true
+                        let countData = await _countTotalCylinderInWarehouseByType(
+                            target,
+                            endDate,
+                            searchs[0].type,
+                            searchContent,
+                            isReturnCylinders,
+                        )
+
+                        if (countData.success) {
+                            let index = returnData['INVENTORY_CYLINDER'].detail.cylinder.findIndex(el => el.code === searchContent)
+                            let filterCylinder
+                            if (index >= 0) {
+                                filterCylinder = await _filterCylindersBySearchType(countData.cylinders, searchManufacture)
+                                returnData['INVENTORY_CYLINDER'].detail.cylinder[index].count += filterCylinder.cylinders[0].count
+                            }
+
+                            if (searchs.length > 1) {
+                                // Sau khi search xong cắt bỏ điều kiện search đầu tiên
+                                const newSearchs = searchs.slice(1)
+                                countData.detail = await _filterCylindersBySearchType2(countData.cylinders, newSearchs, manufacture)
+
+                                const length = countData.detail.cylinders.length
+                                for (let i = 0; i < length; i++) {
+                                    let _index = returnData['INVENTORY_CYLINDER'].detail.cylinder[index].detail.cylinder.findIndex(el => el.code === countData.detail.cylinders[i].code)
+                                    if (_index >= 0) {
+                                        // const filterCylinder = await _filterCylindersBySearchType(countData.cylinders, searchManufacture) 
+                                        returnData['INVENTORY_CYLINDER'].detail.cylinder[index].detail.cylinder[_index].count += countData.detail.cylinders[i].count
+                                    }
+                                }
+                            }
+                        }
+                    }))
+
+                    // Thống kê tổng số ===================================
+                    // Theo [action]
+                    await Promise.all(actions.map(async action => {
+                        const isReturnCylinders = true
+                        let countData = await _countTotalActionCylinder(
+                            target,
+                            action,
+                            startDate,
+                            endDate,
+                            isReturnCylinders,
+                        )
+
+                        if (countData.success) {
+                            const filterCylinder = await _filterCylindersBySearchType(countData.cylinders, searchManufacture)
+                            returnData[action].count += filterCylinder.cylinders[0].count
+                        }
+
+                        // Thống kê từng loại bình
+                        const cylinders = await Promise.all(searchs[0].contents.map(async searchContent => {
+                            const isReturnCylinders = true
+                            let countData = await _countTotalActionCylinderByType(
+                                target,
+                                action,
+                                startDate,
+                                endDate,
+                                searchs[0].type,
+                                searchContent,
+                                isReturnCylinders,
+                            )
+
+                            if (countData.success) {
+                                let index = returnData[action].detail.cylinder.findIndex(el => el.code === searchContent)
+                                let filterCylinder
+                                if (index >= 0) {
+                                    filterCylinder = await _filterCylindersBySearchType(countData.cylinders, searchManufacture)
+                                    returnData[action].detail.cylinder[index].count += filterCylinder.cylinders[0].count
+                                }
+
+                                if (searchs.length > 1) {
+                                    // Sau khi search xong cắt bỏ điều kiện search đầu tiên
+                                    const newSearchs = searchs.slice(1)
+                                    countData.detail = await _filterCylindersBySearchType2(countData.cylinders, newSearchs, manufacture)
+
+                                    const length = countData.detail.cylinders.length
+                                    for (let i = 0; i < length; i++) {
+                                        let _index = returnData[action].detail.cylinder[index].detail.cylinder.findIndex(el => el.code === countData.detail.cylinders[i].code)
+                                        if (_index >= 0) {
+                                            returnData[action].detail.cylinder[index].detail.cylinder[_index].count += countData.detail.cylinders[i].count
+                                        }
+                                    }
+                                }
+                            }
+
+                            // if (countData.success) {
+                            //     let index = returnData[action].detail.cylinder.findIndex(el => el.code === searchContent)
+                            //     if (index >= 0) {
+                            //         returnData[action].detail.cylinder[index].count += countData.count
+                            //     }
+                            // }
+
+                            // delete countData.cylinders
+
+                            // return countData
+                        }))
+
+                        // console.log(cylinders)
+
+                        // await Promise.all(searchs.map(async (search, index,) => {
+                        // Thống kê động theo path
+                        // https://stackoverflow.com/questions/6842795/dynamic-deep-setting-for-a-javascript-object
+                        // }))
+                    }))
+                }
+                // // // Trường hợp không phân chia theo thương hiệu
+                else {
+                    // Thống kê tổng số ===================================
+                    // Tồn kho
+                    const isReturnCylinders = false
+                    let countDataInventory = await _countTotalCylinderInWarehouse(
+                        target,
+                        endDate,
+                        isReturnCylinders,
+                    )
+
+                    if (countDataInventory.success) {
+                        returnData['INVENTORY_CYLINDER'].count += countDataInventory.count
+                    }
+
+                    // Thống kê từng loại bình
+                    const cylinders = await Promise.all(searchs[0].contents.map(async searchContent => {
+                        const isReturnCylinders = true
+                        let countData = await _countTotalCylinderInWarehouseByType(
+                            target,
+                            endDate,
+                            searchs[0].type,
+                            searchContent,
+                            isReturnCylinders,
+                        )
+
+                        if (countData.success) {
+                            let index = returnData['INVENTORY_CYLINDER'].detail.cylinder.findIndex(el => el.code === searchContent)
+                            if (index >= 0) {
+                                returnData['INVENTORY_CYLINDER'].detail.cylinder[index].count += countData.count
+                            }
+
+                            if (searchs.length > 1) {
+                                // Sau khi search xong cắt bỏ điều kiện search đầu tiên
+                                const newSearchs = searchs.slice(1)
+                                countData.detail = await _filterCylindersBySearchType(countData.cylinders, newSearchs)
+
+                                for (let i = 0; i < countData.detail.cylinders.length; i++) {
+                                    let _index = returnData['INVENTORY_CYLINDER'].detail.cylinder[index].detail.cylinder.findIndex(el => el.code === countData.detail.cylinders[i].code)
+                                    if (_index >= 0) {
+                                        returnData['INVENTORY_CYLINDER'].detail.cylinder[index].detail.cylinder[_index].count += countData.detail.cylinders[i].count
+                                    }
+                                }
+                            }
+                        }
+                    }))
+
+                    // Thống kê tổng số ===================================
+                    //
+                    await Promise.all(actions.map(async action => {
+                        const isReturnCylinders = false
+                        let countData = await _countTotalActionCylinder(
+                            target,
+                            action,
+                            startDate,
+                            endDate,
+                            isReturnCylinders,
+                        )
+
+                        if (countData.success) {
+                            returnData[action].count += countData.count
+                        }
+
+                        // Thống kê từng loại bình
+                        const cylinders = await Promise.all(searchs[0].contents.map(async searchContent => {
+                            const isReturnCylinders = true
+                            let countData = await _countTotalActionCylinderByType(
+                                target,
+                                action,
+                                startDate,
+                                endDate,
+                                searchs[0].type,
+                                searchContent,
+                                isReturnCylinders,
+                            )
+
+                            if (countData.success) {
+                                let index = returnData[action].detail.cylinder.findIndex(el => el.code === searchContent)
+                                if (index >= 0) {
+                                    returnData[action].detail.cylinder[index].count += countData.count
+                                }
+
+                                if (searchs.length > 1) {
+                                    // Sau khi search xong cắt bỏ điều kiện search đầu tiên
+                                    const newSearchs = searchs.slice(1)
+                                    countData.detail = await _filterCylindersBySearchType(countData.cylinders, newSearchs)
+
+                                    for (let i = 0; i < countData.detail.cylinders.length; i++) {
+                                        let _index = returnData[action].detail.cylinder[index].detail.cylinder.findIndex(el => el.code === countData.detail.cylinders[i].code)
+                                        if (_index >= 0) {
+                                            returnData[action].detail.cylinder[index].detail.cylinder[_index].count += countData.detail.cylinders[i].count
+                                        }
+                                    }
+                                }
+                            }
+
+                            // if (countData.success) {
+                            //     let index = returnData[action].detail.cylinder.findIndex(el => el.code === searchContent)
+                            //     if (index >= 0) {
+                            //         returnData[action].detail.cylinder[index].count += countData.count
+                            //     }
+                            // }
+
+                            // delete countData.cylinders
+
+                            // return countData
+                        }))
+
+                        // console.log(cylinders)
+
+                        // await Promise.all(searchs.map(async (search, index,) => {
+                        // Thống kê động theo path
+                        // https://stackoverflow.com/questions/6842795/dynamic-deep-setting-for-a-javascript-object
+                        // }))
+                    }))
+                }
+
+                
+
+                return res.json({
+                    status: true,
+                    resCode: 'SUCCESS-00014',
+                    data: returnData,
+                    message: 'Lấy thông tin thống kê thành công'
+                })  
+            }
+
+            // --- TH2: Thống kê số liệu của các đơn vị con
+            if (statisticalType === 'byItsChildren') {
+
+                // returnData.inventoryCylinder = {
+                //     code: 'TOTAL',
+                //     name: 'Tổng số bình tồn kho',
+                //     count: 0,
+                // }
+
+                let _countTotal = 0
+                let _listCountByType = []
+
+                // Search cho loại bình (search.type = WEIGHT) đã có collectin danh mục loại bình
+                // Cần search cho các loại khác (COLOR, VALVE)
+                let searchContents = searchs[0].contents
+                const parent = await getRootParent(userInfor.id)
+
+                // Danh sách các loại bình
+                if (searchs[0].contents.includes('ALL')) {
+                    const foundType = await CategoryCylinder.find({
+                        createdBy: parent,
+                        isDeleted: false
+                    })
+
+                    if (foundType.length > 0) {
+                        searchContents = []
+                        foundType.forEach(type => {
+                            searchContents.push({
+                                code: type.code,
+                                name: type.name,
+                            })
+                            _listCountByType.push({
+                                code: type.code,
+                                name: type.name,
+                                count: 0,
+                            })
+                        });
+                    }
+                }
+
+                // === === === ===
+
+                // Trường hợp công ty mẹ thống kê xem số liệu chi nhánh
+                if (typesOfChildren.includes('Region')) {
+                    typesOfChildren = ['Region']
+
+                    // // --- [Rất quan trọng]: searchs --- //
+
+                    // // Tạo cấu trúc dữ liệu trả về
+                    // await Promise.all(actions.map(async action => {
+                    //     try {
+                    //         Object.assign(returnData, {
+                    //             [action]: {
+                    //                 count: 0,
+                    //             }
+                    //         })
+    
+                    //         const detail = await _createDataStructureBySearch(searchs)
+                    //         returnData[action].detail = detail
+                    //     }
+                    //     catch(error) {
+                    //         console.log(error.message)
+                    //     }
+                    // }));
+
+                    // // Loại bỏ INVENTORY_CYLINDER khỏi danh sách action
+                    // const indexInven = actions.findIndex(action => action === 'INVENTORY_CYLINDER')
+                    // actions.splice(indexInven, 1)
+
+                    // Thống kê các đơn vị con
+
+                    await Promise.all(typesOfChildren.map( async type => {
+                        // if (userType === Factory && userRole === SuperAdmin)
+                        // Tìm các chi nhánh vùng và nhà máy sửa chữa
+                        const listRegion = await User.find({
+                            isChildOf: target,
+                            userType: { in: ['Region', 'Fixer'] },
+                            userRole: 'SuperAdmin',
+                            isDeleted: false,
+                        })
+
+                        // Cần kiểm tra listRegion.length > 0
+
+                        // --- Thống kê tồn kho
+                        await Promise.all(listRegion.map(async region => {            
+                            let criteria = {
+                                isChildOf: region.id,
+                                userRole: { in: ['SuperAdmin', 'Owner'] },
+                            }
+
+                            // Nếu là chi nhánh/công ty con thì tìm các đơn vị con của nó
+                            if (region.userType === 'Region') {
+                                const childs = await User.find(criteria)
+
+                                if (childs.length > 0) {
+                                    const _dataChilds = await Promise.all(childs.map(async child => {
+
+                                        // Thống kê tổng số ===================================
+                                        // Tồn kho
+                                        const isReturnCylinders = false
+                                        let countDataInventory = await _countTotalCylinderInWarehouse(
+                                            child.id,                                                
+                                            endDate,
+                                            isReturnCylinders,
+                                        )
+
+                                        if (countDataInventory.success) {
+                                            returnData['INVENTORY_CYLINDER'].count += countDataInventory.count
+                                        }
+
+                                        // Thống kê từng loại bình
+                                        const cylinders = await Promise.all(searchs[0].contents.map(async searchContent => {
+                                            const isReturnCylinders = true
+                                            let countData = await _countTotalCylinderInWarehouseByType(
+                                                child.id,
+                                                endDate,
+                                                searchs[0].type,
+                                                searchContent,
+                                                isReturnCylinders,
+                                            )
+
+                                            if (countData.success) {
+                                                let index = returnData['INVENTORY_CYLINDER'].detail.cylinder.findIndex(el => el.code === searchContent)
+                                                if (index >= 0) {
+                                                    returnData['INVENTORY_CYLINDER'].detail.cylinder[index].count += countData.count
+                                                }
+
+                                                if (searchs.length > 1) {
+                                                    // Sau khi search xong cắt bỏ điều kiện search đầu tiên
+                                                    const newSearchs = searchs.slice(1)
+                                                    countData.detail = await _filterCylindersBySearchType(countData.cylinders, newSearchs)
+
+                                                    for (let i = 0; i < countData.detail.cylinders.length; i++) {
+                                                        let _index = returnData['INVENTORY_CYLINDER'].detail.cylinder[index].detail.cylinder.findIndex(el => el.code === countData.detail.cylinders[i].code)
+                                                        if (_index >= 0) {
+                                                            returnData['INVENTORY_CYLINDER'].detail.cylinder[index].detail.cylinder[_index].count += countData.detail.cylinders[i].count
+                                                        }
+                                                    }                                                        
+                                                }       
+                                            }
+                                        }))
+
+                                        // Thống kê tổng số ===================================
+                                        // theo [action]
+                                        await Promise.all(actions.map(async action => {
+                                            const isReturnCylinders = false
+                                            let countData = await _countTotalActionCylinder(
+                                                child.id,
+                                                action,
+                                                startDate,
+                                                endDate,
+                                                isReturnCylinders,
+                                            )
+
+                                            if (countData.success) {
+                                                returnData[action].count += countData.count
+                                            }   
+
+                                            // Thống kê từng loại bình
+                                            const cylinders = await Promise.all(searchs[0].contents.map(async searchContent => {
+                                                const isReturnCylinders = true
+                                                let countData = await _countTotalActionCylinderByType(
+                                                    child.id,
+                                                    action,
+                                                    startDate,
+                                                    endDate,
+                                                    searchs[0].type,
+                                                    searchContent,
+                                                    isReturnCylinders,
+                                                )
+
+                                                if (countData.success) {
+                                                    let index = returnData[action].detail.cylinder.findIndex(el => el.code === searchContent)
+                                                    if (index >= 0) {
+                                                        returnData[action].detail.cylinder[index].count += countData.count
+                                                    }
+
+                                                    if (searchs.length > 1) {
+                                                        // Sau khi search xong cắt bỏ điều kiện search đầu tiên
+                                                        const newSearchs = searchs.slice(1)
+                                                        countData.detail = await _filterCylindersBySearchType(countData.cylinders, newSearchs)
+
+                                                        for (let i = 0; i < countData.detail.cylinders.length; i++) {
+                                                            let _index = returnData[action].detail.cylinder[index].detail.cylinder.findIndex(el => el.code === countData.detail.cylinders[i].code)
+                                                            if (_index >= 0) {
+                                                                returnData[action].detail.cylinder[index].detail.cylinder[_index].count += countData.detail.cylinders[i].count
+                                                            }
+                                                        }                                                        
+                                                    }       
+                                                }
+                                            }))
+                                        }))
+                                    }))
+                                }
+                            }
+                            // Nếu là nhà máy sửa chữa thì thống kê chính nó
+                            if (region.userType === 'Fixer') {
+                                // Thống kê tổng số ===================================
+                                // Tồn kho
+                                const isReturnCylinders = false
+                                let countDataInventory = await _countTotalCylinderInWarehouse(
+                                    region.id,
+                                    endDate,
+                                    isReturnCylinders,
+                                )
+
+                                if (countDataInventory.success) {
+                                    returnData['INVENTORY_CYLINDER'].count += countDataInventory.count
+                                }
+
+                                // Thống kê từng loại bình
+                                const cylinders = await Promise.all(searchs[0].contents.map(async searchContent => {
+                                    const isReturnCylinders = true
+                                    let countData = await _countTotalCylinderInWarehouseByType(
+                                        region.id,
+                                        endDate,
+                                        searchs[0].type,
+                                        searchContent,
+                                        isReturnCylinders,
+                                    )
+
+                                    if (countData.success) {
+                                        let index = returnData['INVENTORY_CYLINDER'].detail.cylinder.findIndex(el => el.code === searchContent)
+                                        if (index >= 0) {
+                                            returnData['INVENTORY_CYLINDER'].detail.cylinder[index].count += countData.count
+                                        }
+
+                                        if (searchs.length > 1) {
+                                            // Sau khi search xong cắt bỏ điều kiện search đầu tiên
+                                            const newSearchs = searchs.slice(1)
+                                            countData.detail = await _filterCylindersBySearchType(countData.cylinders, newSearchs)
+
+                                            for (let i = 0; i < countData.detail.cylinders.length; i++) {
+                                                let _index = returnData['INVENTORY_CYLINDER'].detail.cylinder[index].detail.cylinder.findIndex(el => el.code === countData.detail.cylinders[i].code)
+                                                if (_index >= 0) {
+                                                    returnData['INVENTORY_CYLINDER'].detail.cylinder[index].detail.cylinder[_index].count += countData.detail.cylinders[i].count
+                                                }
+                                            }                                                        
+                                        }       
+                                    }
+                                }))                                
+
+                                // Thống kê tổng số ===================================
+                                //
+                                await Promise.all(actions.map(async action => {
+                                    const isReturnCylinders = false
+                                    let countData = await _countTotalActionCylinder(
+                                        region.id,
+                                        action,
+                                        startDate,
+                                        endDate,
+                                        isReturnCylinders,
+                                    )
+
+                                    if (countData.success) {
+                                        returnData[action].count += countData.count
+                                    }
+
+                                    // Thống kê từng loại bình
+                                    const cylinders = await Promise.all(searchs[0].contents.map(async searchContent => {
+                                        const isReturnCylinders = true
+                                        let countData = await _countTotalActionCylinderByType(
+                                            region.id,
+                                            action,
+                                            startDate,
+                                            endDate,
+                                            searchs[0].type,
+                                            searchContent,
+                                            isReturnCylinders,
+                                        )
+
+                                        if (countData.success) {
+                                            let index = returnData[action].detail.cylinder.findIndex(el => el.code === searchContent)
+                                            if (index >= 0) {
+                                                returnData[action].detail.cylinder[index].count += countData.count
+                                            }
+
+                                            if (searchs.length > 1) {
+                                                // Sau khi search xong cắt bỏ điều kiện search đầu tiên
+                                                const newSearchs = searchs.slice(1)
+                                                countData.detail = await _filterCylindersBySearchType(countData.cylinders, newSearchs)
+
+                                                for (let i = 0; i < countData.detail.cylinders.length; i++) {
+                                                    let _index = returnData[action].detail.cylinder[index].detail.cylinder.findIndex(el => el.code === countData.detail.cylinders[i].code)
+                                                    if (_index >= 0) {
+                                                        returnData[action].detail.cylinder[index].detail.cylinder[_index].count += countData.detail.cylinders[i].count
+                                                    }
+                                                }   
+                                            }
+                                        }
+
+                                        // if (countData.success) {
+                                        //     let index = returnData[action].detail.cylinder.findIndex(el => el.code === searchContent)
+                                        //     if (index >= 0) {
+                                        //         returnData[action].detail.cylinder[index].count += countData.count
+                                        //     }
+                                        // }
+
+                                        // delete countData.cylinders
+
+                                        // return countData
+                                    }))
+
+                                    // console.log(cylinders)
+
+                                    // await Promise.all(searchs.map(async (search, index,) => {
+                                        // Thống kê động theo path
+                                        // https://stackoverflow.com/questions/6842795/dynamic-deep-setting-for-a-javascript-object
+                                    // }))
+                                }))
+                            }
+                        }))
+                    }))
+                }
+
+
+                // Thống kê các trường hợp còn lại
+                else {
+                    if (typesOfChildren.includes('ALL')) {
+                        typesOfChildren = ['Warehouse', 'Fixer', 'General', 'Agency']
+                    }
+    
+                    _data = await Promise.all(typesOfChildren.map( async type => {
+                        // let _returnData = {
+                        //     type: type,
+                        //     list: []
+                        // }
+                        let criteria = {
+                            isChildOf: userInfor.id,
+                        }
+        
+                        switch (type) {
+                            case 'Warehouse':
+                                criteria = Object.assign({
+                                    userType: { in: ['Factory'] },
+                                    userRole: { in: ['Owner'] },
+                                }, criteria);
+                                break;
+                            case 'Fixer':
+                                criteria = Object.assign({
+                                    userType: { in: ['Fixer'] },
+                                    userRole: { in: ['SuperAdmin'] },
+                                }, criteria);
+                                break;
+                            case 'General':
+                                criteria = Object.assign({
+                                    userType: { in: ['General'] },
+                                    userRole: { in: ['SuperAdmin'] },
+                                }, criteria);
+                                break;
+                            case 'Agency':
+                                criteria = Object.assign({
+                                    userType: { in: ['Agency'] },
+                                    userRole: { in: ['SuperAdmin'] },
+                                }, criteria);
+                                break;
+                            default:
+                                break;
+                        }
+        
+                        // Tìm các đơn vị con
+                        const childs = await User.find(criteria)
+        
+                        if (childs.length > 0) {
+                            const _dataChilds = await Promise.all(childs.map(async child => {
+
+                                // Thống kê tổng số ===================================
+                                // Tồn kho
+                                const isReturnCylinders = false
+                                let countDataInventory = await _countTotalCylinderInWarehouse(
+                                    child.id,                                                
+                                    endDate,
+                                    isReturnCylinders,
+                                )
+
+                                if (countDataInventory.success) {
+                                    returnData['INVENTORY_CYLINDER'].count += countDataInventory.count
+                                }
+
+                                // Thống kê từng loại bình
+                                const cylinders = await Promise.all(searchs[0].contents.map(async searchContent => {
+                                    const isReturnCylinders = true
+                                    let countData = await _countTotalCylinderInWarehouseByType(
+                                        child.id,
+                                        endDate,
+                                        searchs[0].type,
+                                        searchContent,
+                                        isReturnCylinders,
+                                    )
+
+                                    if (countData.success) {
+                                        let index = returnData['INVENTORY_CYLINDER'].detail.cylinder.findIndex(el => el.code === searchContent)
+                                        if (index >= 0) {
+                                            returnData['INVENTORY_CYLINDER'].detail.cylinder[index].count += countData.count
+                                        }
+
+                                        if (searchs.length > 1) {
+                                            // Sau khi search xong cắt bỏ điều kiện search đầu tiên
+                                            const newSearchs = searchs.slice(1)
+                                            countData.detail = await _filterCylindersBySearchType(countData.cylinders, newSearchs)
+
+                                            for (let i = 0; i < countData.detail.cylinders.length; i++) {
+                                                let _index = returnData['INVENTORY_CYLINDER'].detail.cylinder[index].detail.cylinder.findIndex(el => el.code === countData.detail.cylinders[i].code)
+                                                if (_index >= 0) {
+                                                    returnData['INVENTORY_CYLINDER'].detail.cylinder[index].detail.cylinder[_index].count += countData.detail.cylinders[i].count
+                                                }
+                                            }                                                        
+                                        }       
+                                    }
+                                }))
+
+                                // Thống kê tổng số ===================================
+                                // theo [action]
+                                await Promise.all(actions.map(async action => {
+                                    const isReturnCylinders = false
+                                    let countData = await _countTotalActionCylinder(
+                                        child.id,
+                                        action,
+                                        startDate,
+                                        endDate,
+                                        isReturnCylinders,
+                                    )
+
+                                    if (countData.success) {
+                                        returnData[action].count += countData.count
+                                    }   
+
+                                    // Thống kê từng loại bình
+                                    const cylinders = await Promise.all(searchs[0].contents.map(async searchContent => {
+                                        const isReturnCylinders = true
+                                        let countData = await _countTotalActionCylinderByType(
+                                            child.id,
+                                            action,
+                                            startDate,
+                                            endDate,
+                                            searchs[0].type,
+                                            searchContent,
+                                            isReturnCylinders,
+                                        )
+
+                                        if (countData.success) {
+                                            let index = returnData[action].detail.cylinder.findIndex(el => el.code === searchContent)
+                                            if (index >= 0) {
+                                                returnData[action].detail.cylinder[index].count += countData.count
+                                            }
+
+                                            if (searchs.length > 1) {
+                                                // Sau khi search xong cắt bỏ điều kiện search đầu tiên
+                                                const newSearchs = searchs.slice(1)
+                                                countData.detail = await _filterCylindersBySearchType(countData.cylinders, newSearchs)
+
+                                                for (let i = 0; i < countData.detail.cylinders.length; i++) {
+                                                    let _index = returnData[action].detail.cylinder[index].detail.cylinder.findIndex(el => el.code === countData.detail.cylinders[i].code)
+                                                    if (_index >= 0) {
+                                                        returnData[action].detail.cylinder[index].detail.cylinder[_index].count += countData.detail.cylinders[i].count
+                                                    }
+                                                }                                                        
+                                            }       
+                                        }
+                                    }))
+                                }))
+                            }))
+                        }
+        
+                        return returnData
+                    }))
+                }
+
+                // returnData.inventoryCylinder[0].count = _countTotal
+                // const newData = returnData.inventoryCylinder.concat(_listCountByType)
+                // returnData.inventoryCylinder = newData
+
+                return res.json({
+                    status: true,
+                    resCode: 'SUCCESS-00014',
+                    data: returnData,
+                    message: 'Lấy thông tin thống kê thành công'
+                })                
+            }            
+        }
+        catch (error) {
+            return res.json({
+                status: false,
+                resCode: 'CATCH-00003',
+                data: {
+                    error: error.message
+                },
+                message: 'Gặp lỗi khi lấy thông tin thống kê'
+            })
+        }
+    },
+
+    // Test
+    Test: async function (req, res) {
+        const {
+            target,
+            action,
+            startDate,
+            endDate,
+            typeCylinder,
+        } = req.body
+
+        try {
+            
+            const userInfo = await User.findOne({
+                where: {id: target},
+                select: ['name', 'email']
+            })
+
+            // let count = 00
+
+            // if (!typeCylinder) {
+            //     count = await _countTotalActionCylinder(
+            //         target,
+            //         action,
+            //         new Date(startDate).toISOString(),
+            //         new Date(endDate).toISOString(),
+            //     )
+            // }
+            // else {
+            //     count = await _countTotalActionCylinderByType(
+            //         target,
+            //         action,
+            //         new Date(startDate).toISOString(),
+            //         new Date(endDate).toISOString(),
+            //         typeCylinder
+            //     )
+            // }
+
+            return res.json({ data: userInfo })
+        }
+        catch (error) {
+            console.log(error.message)
+        }
+
+        
+
+
+
+        // console.log(count)
+        // return res.json({ data: userInfo })
+    }
+};
+
+/**
+     * Tìm tổng số bình theo Action
+     * @param target
+     * @param action
+     * @param startDate
+     * @param endDate
+     * @returns {*}
+     */
+_countTotalActionCylinder = async function (target, action, startDate, endDate, isReturnCylinders) {
+    let returnData = {
+        success: false,
+        count: 0,
+        message: ''
+    }
+
+    try {
+        let criteria = {
+            objectId: target,
+            createdAt: { '>=': startDate, '<=': endDate }
+        }
+
+        switch (action) {
+            // Tổng số bình đã tạo
+            case 'CREATED_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                    flow: 'CREATE',
+                }, criteria);
+                break;
+            // Tổng số lần nhập bình (khai báo + nhập vỏ + nhập hàng)
+            case 'IN_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                }, criteria);
+                break;
+            // Tổng số lần xuất bình (xuất hàng + xuất vỏ)
+            case 'OUT_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'OUT',
+                }, criteria);
+                break;
+            // Tổng số lần xuất hàng
+            case 'EXPORT_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'OUT',
+                    flow: 'EXPORT',
+                }, criteria);
+                break;
+            // Tổng số lần nhập hàng
+            case 'IMPORT_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                    flow: 'IMPORT',
+                }, criteria);
+                break;
+            // Tổng số lần xuất vỏ
+            case 'EXPORT_CELL_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'OUT',
+                    flow: 'EXPORT_CELL',
+                }, criteria);
+                break;
+            // Tổng số lần nhập vỏ
+            case 'IMPORT_CELL_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                    flow: 'IMPORT_CELL',
+                }, criteria);
+                break;
+            // Tổng số lần bán bình cho người dân
+            case 'SALE_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'OUT',
+                    flow: 'SALE',
+                }, criteria);
+                break;
+            // Tổng số lần hồi lưu bình
+            case 'TURN_BACK_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                    flow: 'TURN_BACK',
+                }, criteria);
+                break;
+            default:
+                break;
+        }
+
+        let cylinders = []
+        let numberCylinder = 0
+
+        if (isReturnCylinders === true) {
+            const find = await CylinderImex.find(criteria).populate('cylinder')
+            cylinders = await Promise.all(find.map(el => {
+                return el.cylinder
+            }))
+            numberCylinder = cylinders.length
+        }
+        else {
+            numberCylinder = await CylinderImex.count(criteria)
+        }
+
+        returnData.success = true
+        returnData.count = numberCylinder
+        returnData.message = 'Thành công'
+        returnData.cylinders = cylinders
+
+        return returnData
+    }
+    catch (error) {
+        return {
+            success: false,
+            count: 0,
+            message: error.message
+        }
+    }
+};
+
+/**
+     * Tìm tổng số bình [Action] theo loại
+     * @param target
+     * @param action
+     * @param startDate
+     * @param endDate
+     * @param typeCylinder
+     * @returns {*}
+     */
+_countTotalActionCylinderByType = async function (target, action, startDate, endDate, searchType, searchContent, isReturnCylinders) {
+    let returnData = {
+        success: false,
+        code: '',
+        name: '',
+        count: 0,
+        message: ''
+    }
+
+    try {
+        let criteria = {
+            objectId: target,
+            createdAt: { '>=': startDate, '<=': endDate }
+        }
+
+        switch (action) {
+            // Tổng số bình đã tạo
+            case 'CREATED_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                    flow: 'CREATE',
+                }, criteria);
+                break;
+            // Tổng số lần nhập bình (khai báo + nhập vỏ + nhập hàng)
+            case 'IN_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                }, criteria);
+                break;
+            // Tổng số lần xuất bình (xuất hàng + xuất vỏ)
+            case 'OUT_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'OUT',
+                }, criteria);
+                break;
+            // Tổng số lần xuất hàng
+            case 'EXPORT_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'OUT',
+                    flow: 'EXPORT',
+                }, criteria);
+                break;
+            // Tổng số lần nhập hàng
+            case 'IMPORT_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                    flow: 'IMPORT',
+                }, criteria);
+                break;
+            // Tổng số lần xuất vỏ
+            case 'EXPORT_CELL_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'OUT',
+                    flow: 'EXPORT_CELL',
+                }, criteria);
+                break;
+            // Tổng số lần nhập vỏ
+            case 'IMPORT_CELL_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                    flow: 'IMPORT_CELL',
+                }, criteria);
+                break;
+            // Tổng số lần bán bình cho người dân
+            case 'SALE_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'OUT',
+                    flow: 'SALE',
+                }, criteria);
+                break;
+            // Tổng số lần hồi lưu bình
+            case 'TURN_BACK_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                    flow: 'TURN_BACK',
+                }, criteria);
+                break;
+            default:
+                break;
+        }
+
+        let cylinders = []
+        let count = 0
+
+        //
+        const _search = await _criteriaForSearch(searchType)
+        const _searchContent = await _criteriaForContent(searchType, searchContent)
+
+        if (_searchContent.success) {
+            // Tìm danh sách bình với action tương ứng
+            const records = await CylinderImex.find(criteria).populate('cylinder')
+
+            if (isReturnCylinders === true) {
+                await Promise.all(records.map(record => {
+                    if (record.cylinder[_search] === _searchContent.content) {
+                        cylinders.push(record.cylinder)
+                        count++
+                    }
+                }))
+            }
+            else {
+                await Promise.all(records.map(record => {
+                    if (record.cylinder[_search] === _searchContent.content) {
+                        count++
+                    }
+                }))
+            }
+        }
+        else {
+            return {
+                success: false,
+                code: searchContent,
+                name: searchContent,
+                count: 0,
+                message: 'Not found',
+                cylinders,
+            }
+        }
+
+        // // Tìm danh sách bình với action tương ứng
+        // const records = await CylinderImex.find(criteria).populate('cylinder')
+
+        // // Lọc và đếm danh sách bình theo loại
+        // let count = 0
+        // await Promise.all(records.map(record => {
+        //     if (record.cylinder[searchType] === searchContent) {
+        //         count++
+        //     }
+        // }))
+
+        returnData.success = true
+        returnData.code = _searchContent.code
+        returnData.name = _searchContent.name
+        returnData.count = count
+        returnData.message = 'Thành công'
+        returnData.cylinders = cylinders
+
+        return returnData
+    }
+    catch (error) {
+        return {
+            success: false,
+            code: '',
+            name: '',
+            count: 0,            
+            message: error.message
+        }
+    }
+};
+
+/**
+     * Tìm tổng số bình trong kho
+     * @param target
+     * @param endDate
+     * @returns {*}
+     */
+_countTotalCylinderInWarehouse = async function (target, endDate, isReturnCylinders) {
+    let returnData = {
+        success: false,
+        count: 0,
+        message: ''
+    }
+
+    try {
+        // "1970-01-01T00:00:00.000Z"
+        const startDate = new Date(0).toISOString()
+
+        const totalIN = await _countTotalActionCylinder(target, 'IN_CYLINDER', startDate, endDate, isReturnCylinders)
+        const totalOUT = await _countTotalActionCylinder(target, 'OUT_CYLINDER', startDate, endDate, isReturnCylinders)
+
+        const numberCylinder = totalIN.count - totalOUT.count
+
+        if (isReturnCylinders === true) {
+            let cylindersIN = totalIN.cylinders
+            let cylindersOUT = totalOUT.cylinders
+
+            // Lấy danh sách bình trong kho
+            for (let i = 0; i < cylindersOUT.length; i++) {
+                for (let j = 0; j < cylindersIN.length; j++) {
+                    const found = cylindersIN.find(element => element.id === cylindersOUT[i].id);                    
+                    if (found) {
+                        const index = cylindersIN.indexOf(found);
+                        cylindersIN.splice(index, 1);
+                        break;
+                    }
+                }
+            }
+
+            //
+            returnData.cylinders = cylindersIN
+        }
+
+        returnData.success = true
+        returnData.count = numberCylinder
+        returnData.message = 'Thành công'
+
+        return returnData
+    }
+    catch (error) {
+        return {
+            success: false,
+            count: 0,
+            message: error.message
+        }
+    }
+};
+
+/**
+     * Tìm tổng số bình trong kho theo loại
+     * @param target
+     * @param endDate
+     * @param typeCylinder
+     * @returns {*}
+     */
+_countTotalCylinderInWarehouseByType = async function (target, endDate, searchType, searchContent, isReturnCylinders) {
+    let returnData = {
+        success: false,
+        code: '',
+        name: '',
+        count: 0,
+        message: ''
+    }
+
+    try {
+        // "1970-01-01T00:00:00.000Z"
+        const startDate = new Date(0).toISOString()
+
+        // //
+        // const _search = await _criteriaForSearch(searchType)
+        const _searchContent = await _criteriaForContent(searchType, searchContent)
+
+        const totalIN = await _countTotalActionCylinderByType(target, 'IN_CYLINDER', startDate, endDate, searchType, searchContent, isReturnCylinders)
+        const totalOUT = await _countTotalActionCylinderByType(target, 'OUT_CYLINDER', startDate, endDate, searchType, searchContent, isReturnCylinders)
+
+        const numberCylinder = totalIN.count - totalOUT.count
+
+        if (isReturnCylinders === true) {
+            let cylindersIN = totalIN.cylinders
+            let cylindersOUT = totalOUT.cylinders
+
+            // Lấy danh sách bình trong kho
+            for (let i = 0; i < cylindersOUT.length; i++) {
+                for (let j = 0; j < cylindersIN.length; j++) {
+                    const found = cylindersIN.find(element => element.id === cylindersOUT[i].id);                    
+                    if (found) {
+                        const index = cylindersIN.indexOf(found);
+                        cylindersIN.splice(index, 1);
+                        break;
+                    }
+                }
+            }
+
+            //
+            returnData.cylinders = cylindersIN
+        }
+
+        returnData.success = true
+        returnData.code = _searchContent.code
+        returnData.name = _searchContent.name
+        returnData.count = numberCylinder
+        returnData.message = 'Thành công'
+
+        return returnData
+    }
+    catch (error) {
+        return {
+            success: false,
+            code: searchContent,
+            name: searchContent,
+            count: 0,
+            message: error.message
+        }
+    }
+};
+
+//
+_criteriaForSearch = async function (searchType) {
+    let returnSearch = ''
+
+    switch (searchType) {
+        case 'WEIGHT':
+            returnSearch = 'category'
+            break;
+        case 'COLOR':
+            returnSearch = 'color'
+            break;
+        case 'VALVE':
+            returnSearch = 'valve'
+            break;
+        case 'CLASS':
+            returnSearch = 'classification'
+            break;
+        case 'MANUFACTURE':
+            returnSearch = 'manufacture'
+            break;
+        default:
+            break;
+    }
+
+    return returnSearch
+};
+
+//
+_criteriaForContent = async function (searchType, searchContent) {
+    let returnData = {
+        success: false,
+        code: searchContent,
+        name: '',
+        content: '',
+    }
+
+    switch (searchType) {
+        case 'WEIGHT':
+            const found = await CategoryCylinder.findOne({ code: searchContent })
+            if (found) {
+                returnData.success = true
+                returnData.name = found.name
+                returnData.content = found.id                
+            }
+            break;
+        case 'COLOR':
+            returnData.success = true
+            returnData.name = searchContent
+            returnData.content = searchContent
+            break;
+        case 'VALVE':
+            returnData.success = true
+            returnData.name = searchContent
+            returnData.content = searchContent
+            break;
+        case 'CLASS':
+            returnData.success = true
+            returnData.name = searchContent
+            returnData.content = searchContent
+            break;
+        case 'MANUFACTURE':
+            returnData.success = true
+            returnData.name = searchContent
+            returnData.content = searchContent
+            break;
+        default:
+            break;
+    }
+
+    return returnData
+};
+
+//
+_filterCylindersBySearchType = async function (cylinders, searchs, userId) {
+    let returnData = {
+        _key: '',
+        success: false,
+        message: ''
+    }
+    try {
+        if (searchs.length > 0) {
+            let search = searchs[0]
+            let searchContents = searchs[0].contents
+            let nameContents = []
+            // Nếu tìm theo danh mục bình (VD: WEIGHT - danh mục trọng lượng bình)
+            // Thì trả ra name theo tên trong Collection danh mục
+            // Nếu tìm theo field trên Collection Cylinder (VD: COLOR, VALVE, CLASS)
+            // Thì trả ra name theo tên filed tương ứng trong Collection Cylinder
+            let isChangeName = false
+
+            // Cần danh sách content!!! - Trường hợp search {WEIGHT - ALL}
+            if (search.type === 'WEIGHT' && search.contents.includes('ALL')) {
+                const parent = await getRootParent(userId)
+
+                const foundType = await CategoryCylinder.find({
+                    createdBy: parent,
+                    isDeleted: false
+                })
+
+                if (foundType.length > 0) {
+                    // Đổi tên trả rara
+                    isChangeName = true
+                    
+                    nameContents = []
+                    searchContents = []
+                    foundType.forEach(type => {
+                        searchContents.push(type.code)
+                        nameContents.push(type.name)
+                    });
+                }
+            }
+
+            // await Promise.all(searchs.map( async search => {
+            const _search = await _criteriaForSearch(search.type)
+
+            const _data = await Promise.all(searchContents.map(async (content, index) => {
+                let returnData = {
+                    success: false,
+                    code: content,
+                    name: '',
+                    count: 0,
+                }
+
+                // Cần danh sách content!!! - Trường hợp search {WEIGHT - ALL}
+                const _searchContent = await _criteriaForContent(search.type, content)
+
+                if (_searchContent.success) { 
+                    try {
+                        const _listCylinders = cylinders.filter(cylinder => cylinder[_search] === _searchContent.content)
+    
+                        returnData.count = _listCylinders.length
+                        returnData.success = true
+                        returnData.name = isChangeName ? nameContents[index] : _searchContent.content
+                        returnData.cylinders = _listCylinders
+    
+                        if (searchs.length > 1) {
+                            // Sau khi search xong cắt bỏ điều kiện search đầu tiên
+                            const newSearchs = searchs.slice(1)
+                            returnData.detail = await _filterCylindersBySearchType(returnData.cylinders, newSearchs, userId)
+                        }
+    
+                        delete returnData.cylinders
+    
+                        return returnData
+                    }
+                    catch (error) {
+                        return {
+                            _key: _search,
+                            success: false,
+                            count: 0,
+                            message: error.message
+                        }
+                    }
+                }
+                else {
+                    return {
+                        _key: _search,
+                        success: false,
+                        count: 0,
+                        message: 'Not found',
+                    }
+                }                
+            }))
+            // }))
+
+            returnData._key = search.type
+            returnData.success = true
+            returnData.message = 'Thành công'
+            returnData.cylinders = _data
+
+            return returnData
+        }
+        else {
+            return {
+                _key: '',
+                success: true,
+                message: 'Không còn _key để tìm kiếm'
+            }
+        }
+    }
+    catch (error) {
+        return {
+            _key: '',
+            success: false,
+            message: error.message
+        }
+    }
+}
+
+//
+_filterCylindersBySearchType2 = async function (cylinders, searchs, manufacture) {
+    let returnData = {
+        _key: '',
+        success: false,
+        message: ''
+    }
+    try {
+        if (searchs.length > 0) {
+            let search = searchs[0]
+            let searchContents = searchs[0].contents            
+
+            // await Promise.all(searchs.map( async search => {
+            const _search = await _criteriaForSearch(search.type)
+
+            const _data = await Promise.all(searchContents.map(async content => {
+                let returnData = {
+                    success: false,
+                    code: content,
+                    name: '',
+                    count: 0,
+                }
+
+                // Cần danh sách content!!! - Trường hợp search {WEIGHT - ALL}
+                const _searchContent = await _criteriaForContent(search.type, content)
+
+                if (_searchContent.success) { 
+                    try {
+                        // // // === === Lọc danh sách bình theo manufacture === === // // //
+                        const newCylinders = cylinders.filter(cylinder => cylinder.manufacture === manufacture)
+
+                        const _listCylinders = newCylinders.filter(cylinder => cylinder[_search] === _searchContent.content)
+    
+                        returnData.count = _listCylinders.length
+                        returnData.success = true
+                        returnData.name = _searchContent.content
+                        returnData.cylinders = _listCylinders
+    
+                        if (searchs.length > 1) {
+                            // Sau khi search xong cắt bỏ điều kiện search đầu tiên
+                            const newSearchs = searchs.slice(1)
+                            returnData.detail = await _filterCylindersBySearchType2(returnData.cylinders, newSearchs, userId)
+                        }
+    
+                        delete returnData.cylinders
+    
+                        return returnData
+                    }
+                    catch (error) {
+                        return {
+                            _key: _search,
+                            success: false,
+                            count: 0,
+                            message: error.message
+                        }
+                    }
+                }
+                else {
+                    return {
+                        _key: _search,
+                        success: false,
+                        count: 0,
+                        message: 'Not found',
+                    }
+                }                
+            }))
+            // }))
+
+            returnData._key = search.type
+            returnData.success = true
+            returnData.message = 'Thành công'
+            returnData.cylinders = _data
+
+            return returnData
+        }
+        else {
+            return {
+                _key: '',
+                success: true,
+                message: 'Không còn _key để tìm kiếm'
+            }
+        }
+    }
+    catch (error) {
+        return {
+            _key: '',
+            success: false,
+            message: error.message
+        }
+    }
+}
+
+//
+_createDataStructureBySearch = async function (searchs) {
+    // returnData.push({
+    //     [action]: {
+    //         count: 0,
+    //         _key: '',
+    //         cylinder: [],
+    //     }
+    // })
+
+    let _returnData = {
+        _key: searchs[0].type,
+        cylinder: []
+    }
+
+    await Promise.all(searchs[0].contents.map(async content => {
+        const _searchContent = await _criteriaForContent(searchs[0].type, content)
+
+        _returnData.cylinder.push({
+            code: _searchContent.code,
+            name: _searchContent.name,
+            count: 0,
+        })
+    }))
+    
+    await Promise.all(_returnData.cylinder.map(async cylinder => {
+        if (searchs.length > 1) {
+            const newSearchs = searchs.slice(1)
+            cylinder.detail = await _createDataStructureBySearch(newSearchs)
+        } 
+    }))       
+
+    return _returnData
+}
+
+// *************** Function to get root Parent of user tree
+async function getRootParent(parentId) {
+    try {
+        if (parentId === null || typeof parentId === 'undefined' || parentId === '') { return ''; }
+        let parent = await User.findOne({ id: parentId });
+        if (!parent) { return ''; }
+        if (parent.userType === USER_TYPE.Factory && parent.userRole === USER_ROLE.SUPER_ADMIN) { return parent.id; }
+        return await getRootParent(parent.isChildOf);
+    }
+    catch (error) {
+        console.log(error.message)
+    }
+
+}

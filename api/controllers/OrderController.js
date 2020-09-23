@@ -1,0 +1,124 @@
+
+
+module.exports = {
+  setOrder: async function (req, res) {
+    if (!req.body) {
+        return res.badRequest(Utils.jsonErr('Empty body'));
+    }    
+
+    const {
+        orderId,
+        factoryId,
+        numberCylinders,
+        orderDate,
+        createdBy
+    } = req.body.createOrder
+
+    
+    try {
+
+        const checkOrder = await Order.findOne({ orderId: orderId })
+
+        if (checkOrder) {
+            return res.json({success: false, message: 'Trùng mã đơn hàng'}); 
+        }
+
+        const order = await Order.create({
+            orderId: orderId,
+            factoryId: factoryId,
+            numberCylinders: numberCylinders,
+            orderDate: orderDate,
+            createdBy: createdBy,
+            status: 'INIT' 
+        }).fetch();
+
+        if (order) {
+            return res.json({success: true, message: 'Ghi đơn hàng thành công'});
+        } 
+        else {
+            return res.json({success: false, message: 'Ghi đơn hàng thất bại'});
+        }
+
+    } catch (error) {
+        return res.json({success: false, message: err.message});
+    }
+  },
+
+  getOrders: async function (req, res) {
+    if (!req.body) {
+        return res.badRequest(Utils.jsonErr('Empty body'));
+    }  
+
+    const {
+        orderCreatedBy
+    } = req.body
+
+    try {
+        const order = await Order.find({
+            createdBy: orderCreatedBy
+        }).populate('factoryId');
+
+        if (order) {
+            return res.json({success: true, order: order, message: 'Lấy thông tin đơn hàng thành công'});
+        } 
+        else {
+            return res.json({success: false, message: 'Không có đơn hàng nào'});
+        }
+
+    } catch (error) {
+        return res.json({success: false, message: err.message});
+    }
+  },
+
+  getOrdersOfFactory: async function (req, res) {
+    if (!req.body) {
+        return res.badRequest(Utils.jsonErr('Empty body'));
+    }  
+
+    const {
+        factoryId
+    } = req.body
+
+    try {
+        const orderFactory = await Order.find({
+            factoryId: factoryId
+        })
+
+        if (orderFactory) {
+            return res.json({success: true, orderFactory: orderFactory, message: 'Lấy thông tin đơn hàng thành công'});
+        } 
+        else {
+            return res.json({success: false, message: 'Không có đơn hàng nào'});
+        }
+
+    } catch (error) {
+        return res.json({success: false, message: err.message});
+    }
+  },
+
+  changeOrderStatus: async function (req, res) {
+    if (!req.body) {
+        return res.badRequest(Utils.jsonErr('Empty body'));
+    }  
+
+    const {
+        updatedBy,
+        orderStatus,
+        orderId
+    } = req.body.updateOrderStatus
+
+    try {
+        const changeOrderStatus = await Order.updateOne({id: orderId}).set({ updatedBy: updatedBy, status: orderStatus });
+
+        if (changeOrderStatus) {
+            return res.json({success: true, changedOrder: changeOrderStatus, message: 'Thay đổi thông tin trạng thái thành công\n'+orderStatus});
+        } 
+        else {
+            return res.json({success: false, message: 'Lỗi thay đổi trạng thái'});
+        }
+
+    } catch (error) {
+        return res.json({success: false, message: err.message});
+    }
+  },
+};

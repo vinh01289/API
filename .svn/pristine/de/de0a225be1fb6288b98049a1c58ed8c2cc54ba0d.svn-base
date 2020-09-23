@@ -1,0 +1,460 @@
+/**
+ * CylinderController
+ *
+ * @description :: Server-side logic for managing Users
+ * @help        :: See http://sailsjs.org/#!/documentation/concepts/Controllers
+ */
+const API_ERRORS = require('../constants/APIErrors');
+const LogType = require('../constants/LogType');
+
+module.exports = {
+
+  /**
+	 * Action for /cylinder
+	 * @param req
+	 * @param res
+	 * @returns {*}
+	 */
+  index: async function (req, res) {
+    let userId = req.userInfo.id;
+    let cylinders = await Cylinder
+			.find({current: req.userInfo.id});
+    return res.ok(cylinders);
+  },
+
+  /**
+     * Action for /cylinder/:id
+     * @param req
+     * @param res
+     * @returns {*}
+     */
+  detail: async function (req, res) {
+    if (req.query.cyliner_id === '' || req.query.cyliner_id === '""') {
+      return res.badRequest(Utils.jsonErr('Cyliner ID not found'));
+    }
+
+    try {
+      const result = await Cylinder.findOne(req.query.cyliner_id);
+      return res.ok({data: result});
+    } catch (err) {
+      return res.serverError(Utils.jsonErr(err));
+    }
+  },
+
+
+  /**
+     * Action for /cylinder/import
+     * @param req
+     * @param res
+     * @returns {*}
+     */
+  import: async function (req, res) {
+    const user = req.userInfo;
+
+    if (user.userType !== 'Factory') {
+      return res.badRequest(Utils.jsonErr('Bạn không có đủ thẩm quyền'));
+    }
+
+    if (req.body === {}) {
+      return res.badRequest(Utils.jsonErr('Empty body'));
+    }
+
+    const fixerId = req.body.fixerId;
+
+    req.file('upload_file').upload({
+      dirname: require('path').resolve(sails.config.appPath, 'excel/')
+    }, async (err, files) => {
+      if (err) {return res.serverError(err);}
+
+      try {
+        const result = await CylinderService.excelToCylinder(files, user.id, fixerId);
+        const content = result.body.length > 0 ? 'Success import Cylinders data' : result.err;
+        await Log.create({type: LogType.IMPORT_EXCEL_CYLINDER_ACTION, content, status: result.status });
+        return res.ok({status: result.status, err: result.status ? '' : result.err });
+      } catch (err) {
+        try {
+          await Log.create({type: LogType.IMPORT_EXCEL_CYLINDER_ACTION, content: err.message, status: false });
+        } catch (error) {}
+        return res.serverError(Utils.jsonErr(err));
+      }
+    });
+  },
+
+
+  /**
+     * Action for /cylinder/upPlaceStatus
+     * @param req
+     * @param res
+     * @returns {*}
+     */
+  upPlaceStatus: async function (req, res) {
+    if (!req.body) {
+      return res.badRequest(Utils.jsonErr('Empty body'));
+    }
+
+    try {
+      const result = await CylinderService.upPlaceStatus(req.body.cyliner_id, req.userInfo);
+      if(!result) {res.badRequest(Utils.jsonErr(API_ERRORS.ROLE_RESTRICT));}
+      return res.ok(result);
+    } catch (err) {
+      return res.serverError(Utils.jsonErr(err));
+    }
+  },
+
+  /**
+     * Action for /cylinder/create
+     * @param req
+     * @param res
+     * @returns {*}
+     */
+  create: async function (req, res) {
+    const body = req.body;
+    if (!body || !body.manufacture || !body.serial) {
+      return res.badRequest(Utils.jsonErr('Empty body'));
+    }
+
+    if (req.userInfo.userType !== 'Factory' && req.userInfo.userType !== 'Agency') {
+      return res.badRequest(Utils.jsonErr('Bạn không có đủ thẩm quyền'));
+    }
+
+    try {
+      const exitsCylinder = await Cylinder.findOne({
+        where: {serial: body.serial, manufacture: body.manufacture},
+      });
+      if(exitsCylinder) {return res.badRequest(Utils.jsonErr(API_ERRORS.EXIST_MODEL));}
+
+      body.factory = req.userInfo.id;
+      body.current = req.userInfo.id;
+      const cylinder = await Cylinder.create(body).fetch();
+
+      return res.created(cylinder);
+    } catch (err) {
+      return res.serverError(Utils.jsonErr(err));
+    }
+  },
+
+  /**
+     * Action for /cylinder/getInfomation
+     * @param req
+     * @param res
+     * @returns {*}
+     */
+  getInfomation: async function (req, res) {
+    if (req.body === {}) {
+      return res.badRequest(Utils.jsonErr('Empty body'));
+    }
+
+    const user = req.userInfo;
+    const actionType = req.body.action_type;
+    const parentRoot = req.body.parent_root;
+    const cylinderSerial = req.body.cylinder_serials;
+    let credential = {};
+
+    if (!actionType) {
+      return res.ok(Utils.jsonErr('Missing action_type'));
+    }
+
+    if (!parentRoot) {
+      return res.ok(Utils.jsonErr('Missing parent_root'));
+    }
+
+    if(!cylinderSerial || cylinderSerial.length === 0  )  {return res.ok(Utils.jsonErr('Empty request cylinder_serials, cylinder_serials must be id array'));}
+
+    credential.serial = cylinderSerial;
+    //credential.factory = parentRoot;
+
+    try {
+      let cylinders = [];
+      if(actionType === 'CHANGE_DATE') {
+        cylinders = await Cylinder.find(credential);
+        const deliveringCylinders = _.filter(cylinders, o => {return o.current !== user.id;}); // Check những mã đang Vận chuyển
+        if(deliveringCylinders.length > 0) {return res.ok(Utils.jsonErr(`Những mã này đang vận chuyển, đã bán, bình rỗng, hoặc đang không ở doanh nghiệp sở tại nên không thể xuất : ${getArrayOfSerials(deliveringCylinders).join(',')}`));}
+        return res.ok(cylinders);
+      } else {
+        cylinders = await Cylinder.find(credential).populate('histories');
+
+        cylinders = await Promise.all(cylinders.map(async cylinder => {
+          cylinder.histories = await Promise.all(cylinder.histories.map(async history => {
+            return await History.findOne({id: history.id}).populate(['to', 'from', 'toArray']);
+          }));
+          return cylinder;
+        }));
+        return await getSuitableCylinders(res, user, actionType, cylinderSerial, cylinders);
+      }
+    } catch (err) {
+      return res.serverError(Utils.jsonErr(err));
+    }
+  },
+
+  /**
+	 * Action for /cylinder/updateVerifiedDates
+	 * @param amount
+	 * @param res
+	 * @returns {*}
+	 */
+  updateVerifiedDates: async function (req, res) {
+    const user = req.userInfo;
+    const cylinderIds = req.body.cylinder_serials;
+    const newDate = req.body.newDate;
+
+    if (user.userType !== 'Factory' && user.userType !== 'Fixer' && user.userRole !== 'SuperAdmin') {
+      return res.ok(Utils.jsonErr('Bạn không có đủ quyền'));
+    }
+
+    if (!cylinderIds) {
+      return res.ok(Utils.jsonErr('cylinder_serials is required'));
+    }
+
+    if (!newDate) {
+      return res.ok(Utils.jsonErr('newDate is required'));
+    }
+
+    let passedCylinderIds = [];
+    let listErrorCylinder = [];
+    // let passedCylinderIds = await Promise.all(cylinderIds.filter(async cylinderId => {
+    //   const modelCylinder = await Cylinder.findOne({'id': cylinderId});
+    //   if(modelCylinder.current === user.id && (modelCylinder.placeStatus === 'IN_FACTORY' || modelCylinder.placeStatus === 'IN_REPAIR')) {return cylinderId;}
+    // }));
+    for (let index = 0; index < cylinderIds.length; index++) {
+      const modelCylinder = await Cylinder.findOne({'id': cylinderIds[index]});
+      if(modelCylinder.current === user.id && (modelCylinder.placeStatus === 'IN_FACTORY' || modelCylinder.placeStatus === 'IN_REPAIR')) {
+        passedCylinderIds.push(cylinderIds[index]);
+      } else {
+        listErrorCylinder.push(cylinderIds[index]);
+      }
+    }
+
+    //Return error if non of cylinderid passed the check
+    if(passedCylinderIds.length === 0) {return res.ok(Utils.jsonErr('Không update được vì không mã nào ở cở sở hiện tại'));}
+    //Get all error serial
+    //let listErrorCylinder = _.difference(cylinderIds, passedCylinderIds);
+
+    let listError = '';
+    if(listErrorCylinder.length > 0) {
+      listError = listErrorCylinder.join('; ');
+    }
+
+    try {
+      const patchedCylinders = await Cylinder.update({'_id': passedCylinderIds}).set({checkedDate: newDate});
+      if(listErrorCylinder.length === 0) {
+        return res.ok(patchedCylinders);
+      } else {
+        return res.ok(Utils.jsonErr(`Cập nhật thành công nhưng các mã dưới đây lỗi do không ở tại cơ sở hiện tại ${listError}`));
+      }
+    } catch (error) {
+      return res.ok(Utils.jsonErr(error));
+    }
+  },
+
+  /**
+	 * Action for /cylinder/updateCylinder
+	 * @param amount
+	 * @param res
+	 * @returns {*}
+	 */
+  updateCylinder: async function (req, res) {
+    const user = req.userInfo;
+    const cylinderId = req.body.cylinder_id;
+    const newPrice = req.body.price;
+    const newColor = req.body.color;
+    const newWeight = req.body.weight;
+    const newCheckedDate = req.body.checked_date;
+    const newImageUrl = req.body.img_url;
+    const idUser = req.body.idUser;
+
+    if (!cylinderId) {
+      return res.ok(Utils.jsonErr('cylinder_id is required'));
+    }
+
+    if (newPrice && typeof newPrice !== 'number') {
+      return res.ok(Utils.jsonErr('price is not type number'));
+    }
+
+    if (newColor && typeof newColor !== 'string') {
+      return res.ok(Utils.jsonErr('color is not type string'));
+    }
+
+    if (newWeight && typeof newWeight !== 'number') {
+      return res.ok(Utils.jsonErr('weight is not type number'));
+    }
+
+    if (newCheckedDate && typeof newCheckedDate !== 'string') {
+      return res.ok(Utils.jsonErr('check_date is not type string'));
+    }
+
+    if (newImageUrl && typeof newImageUrl !== 'string') {
+      return res.ok(Utils.jsonErr('img_url is not type string'));
+    }
+
+    patch = {};
+    if(newPrice) {patch.currentSalePrice = newPrice;}
+    if(newColor) {patch.color = newColor;}
+    if(newWeight) {patch.weight = newWeight;}
+    if(newCheckedDate) {patch.checkedDate = newCheckedDate;}
+    if(newImageUrl) {patch.img_url = newImageUrl;}
+    patch.updateBy = idUser;
+
+    try {
+      const patchedCylinder = await Cylinder.updateOne({'_id': cylinderId}).set(patch);
+
+      if(patchedCylinder) {
+        if(newPrice) {
+          await PriceHistory.create({
+            cylinders: patchedCylinder.id,
+            user: user.id,
+            price: newPrice
+          });
+        }
+        res.ok(patchedCylinder);
+      } else {
+        res.notFound('Cannot update un-exist cylinder');
+      }
+    } catch (error) {
+      res.serverError(error);
+    }
+
+  },
+
+  searchCylinder: async function (req, res) {
+    const cylinderSerial = req.query.cylinder_serial;
+    if(!cylinderSerial) {
+      return res.ok('Missing cylinder_serial');
+    }
+
+    let page = parseInt(req.query.page);
+    if(!page) {page = 1;}
+
+    let limit =  parseInt(req.query.limit);
+    if(!limit) {limit = 10;}
+
+    const skip = limit * (page - 1);
+
+    const user = req.userInfo;
+
+    try {
+      let manufactures = await Manufacture.find({owner: user.parentRoot});
+
+      manufactures = manufactures.map(item => {
+        return item.id;
+      });
+
+      const credential = {
+        serial: {contains : cylinderSerial},
+        manufacture: {in: manufactures}
+      };
+
+      const cylinders =  await Cylinder.find({where: credential, limit, skip}).populate('manufacture');
+      const count = await Cylinder.count({where: credential});
+      //const cylinders =  await Cylinder.find({where: {serial: {contains : cylinderSerial}}}).paginate(page, limit);
+
+
+      //const totalItem = (page - 1) * limit + cylinders.length;
+      //console.log('Maximum Item:', count);
+
+      const response = {
+        data: cylinders,
+        totalItem: count
+      };
+      return res.ok(response);
+    } catch (error) {
+      return res.ok(Utils.jsonErr(error));
+    }
+  },
+
+  searchCylinders: async  function (req, res) {
+    
+    if(!req.body) {
+      return res.badRequest(Utils.jsonErr('Empty body'));
+    }    
+
+    const cylindersId = req.body.findCylinders;
+    let cylindersInfor = []
+
+    try {
+      await Promise.all ( cylindersId.map( async (idCyl) => {
+        let cylinderInfor = await Cylinder.findOne({ id: idCyl})
+        if (cylinderInfor) {
+           cylindersInfor.push(cylinderInfor)
+        }
+      })
+      )
+
+      
+      if (cylindersInfor.length > 0) {
+        return res.json({ success: true, data_cylindersInfor: cylindersInfor, message: "Lấy thông tin thành công" });
+      }
+      else {
+        return res.json({ success: false, message: "Lấy thông tin không thành công" });
+      }   
+      
+      
+    } catch (error) {
+      return res.json({ success: false, message: err.message });  
+    }
+  },
+
+};
+
+
+// =============== get Available Cylinders suitable by action ===================
+
+async function getSuitableCylinders (res, user, actionType, requestSerials, cylinders) {
+  /**
+   *  enum for action type
+   *  EXPORT: Hành động xuất bình đầy
+   *  EXPORT_STATION: Hành động xuất từ factory --> Station (cho phép bình rỗng và đầy)
+   *  IMPORT: Hành động nhập bình
+   **/
+  if(cylinders.length > 0) {
+    // Check những mã request không trong hệ thống
+    const cylinderSerials = getArrayOfSerials(cylinders);
+    const serialNotInSystemTree = _.difference(requestSerials,  cylinderSerials);
+    if(serialNotInSystemTree.length > 0) {res.ok(Utils.jsonErr(`Những mã này không nằm trong Hệ thống của bạn : ${serialNotInSystemTree.join(',')}`));}
+
+    // Nếu action là EXPORT
+    if(actionType === 'EXPORT') {
+      const deliveringCylinders = _.filter(cylinders, o => {return (o.placeStatus === 'DELIVERING' || o.placeStatus === 'IN_CUSTOMER' || o.current !== user.id);}); // Check những mã đang Vận chuyển
+      if(deliveringCylinders.length > 0) {return res.ok(Utils.jsonErr(`Những mã này đang vận chuyển, đã bán, bình rỗng, hoặc đang không ở doanh nghiệp sở tại nên không thể xuất : ${getArrayOfSerials(deliveringCylinders).join(',')}`));}
+    }
+
+    // Nếu action là EXPORT_STATION
+    // if(actionType === 'EXPORT_STATION') {
+    //   const deliveringCylinders = _.filter(cylinders, o => {return (o.placeStatus === 'DELIVERING' || o.placeStatus === 'IN_CUSTOMER' || o.current !== user.id );}); // Check những mã đang Vận chuyển
+    //   if(deliveringCylinders.length > 0) {return res.ok(Utils.jsonErr(`Những mã này đang vận chuyển, đã bán hoặc đang không ở doanh nghiệp sở tại nên không thể xuất : ${getArrayOfSerials(deliveringCylinders).join(',')}`));}
+    // }
+
+    // Nếu action là IMPORT
+    if(actionType === 'IMPORT') {
+      const notDeliveringCylinders = _.filter(cylinders, o => {return o.placeStatus !== 'DELIVERING';}); // Check những mã đang không vận chuyển
+      if(notDeliveringCylinders.length > 0) {return res.ok(Utils.jsonErr(`Những mã này chưa xuất nên không thể nhập : ${getArrayOfSerials(notDeliveringCylinders).join(',')}`));}
+      const notCorrectDestination = _.filter(cylinders, o => {
+        if(o.histories.length > 0) {
+          const lastHistory = o.histories[o.histories.length -1];
+          if(lastHistory.toArray.length > 0) {
+            return _.find(lastHistory.toArray, i => {return i.id === user.id; }) === undefined;
+          } else {
+            return lastHistory.to.id !== user.id;
+          }
+        }
+      });
+      if(notCorrectDestination.length > 0) {return res.ok(Utils.jsonErr(`Những mã không thể nhập vì không xuất cho doanh nghiệp sở tại : ${getArrayOfSerials(notCorrectDestination).join(',')}`));}
+    }
+
+    if(actionType === 'TURN_BACK' ) {
+      const deliveringCylinders = _.filter(cylinders, o => {return (o.placeStatus === 'DELIVERING');}); // Check những mã đang Vận chuyển
+      if(deliveringCylinders.length > 0) {return res.ok(Utils.jsonErr(`Những mã này đang vận chuyển nên không thể nhập : ${getArrayOfSerials(deliveringCylinders).join(',')}`));}
+      const currentCylinders = _.filter(cylinders, o => {return (o.current === user.id);}); // Check những mã đang Vận chuyển
+      if(currentCylinders.length > 0) {return res.ok(Utils.jsonErr(`Những mã này đã hồi lưu nên không thể hồi lưu tiếp : ${getArrayOfSerials(currentCylinders).join(',')}`));}
+    }
+
+    res.ok(cylinders);
+  }
+  return res.ok(Utils.jsonErr('Không tìm thấy bất kì mã nào'));
+}
+
+function getArrayOfSerials(cylinders) {
+  return cylinders.map(cylinder => {return cylinder.serial;});
+}
+
+
+

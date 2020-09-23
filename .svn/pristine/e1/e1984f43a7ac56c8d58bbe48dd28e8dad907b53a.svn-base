@@ -1,0 +1,27 @@
+module.exports = {
+    attributes: {
+        idCompany: {
+            model: 'manufacture'
+        },
+        serialCylinder: {
+          type: 'string',
+          required: true
+        },
+
+        dateReceived: {
+            type: 'string',
+            required: true
+        },
+
+        weight: {
+            type: 'Number',
+            required: true
+        },
+        createBy: {
+            model: 'user'
+        },
+        updateBy: {
+            model: 'user'
+        }
+    }
+}

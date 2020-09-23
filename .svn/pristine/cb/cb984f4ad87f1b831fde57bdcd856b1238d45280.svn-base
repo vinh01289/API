@@ -1,0 +1,704 @@
+/**
+ * ReportController
+ *
+ * @description :: Server-side actions for handling incoming requests.
+ * @help        :: See https://sailsjs.com/docs/concepts/actions
+ */
+
+const ReportServices = require('../services/ReportService');
+const USER_TYPES = require('../constants/UserTypes');
+const USER_ROLE= require('../constants/UserRoles');
+const excel = require('node-excel-export');
+const fs = require('fs');
+
+const styles = {
+  headerDark: {
+    fill: {
+      fgColor: {
+        rgb: 'FF000000'
+      }
+    },
+    font: {
+      color: {
+        rgb: 'FFFFFFFF'
+      },
+      sz: 14,
+      bold: true,
+      underline: true
+    }
+  },
+  cellPink: {
+    fill: {
+      fgColor: {
+        rgb: 'FFFFCCFF'
+      }
+    }
+  },
+  cellGreen: {
+    fill: {
+      fgColor: {
+        rgb: 'FF00FF00'
+      }
+    }
+  }
+};
+
+module.exports = {
+
+  //lay danh sach TNMB va CHBL cua TNSH va kiem tra ton kho
+  getListChild : async function (req, res){
+    let email = req.body.email;
+    let data = await User.findOne({email : email});
+    if(data == undefined || data == "" || data == null){
+      return res.json({err: true, message: "email khong ton tai !"});
+    }
+    let d = data.id;
+    let a = await User.find({isChildOf : d, userRole: "SuperAdmin"});
+     
+    const arr = [];
+    let obj = {};  
+    for(let i = 0; i < a.length; i++ ){   
+      if( a[i].userType === "General"){
+        let h = await Cylinder.count({current : a[i].id, placeStatus : "IN_GENERAL"});
+        console.log("asd "+h);
+
+        obj = {
+          ...a[i],
+          soluong : h
+        }
+        arr.push(obj);
+        console.log(obj);
+      }
+      else if( a[i].userType === "Agency"){
+        let h = await Cylinder.count({current : a[i].id, placeStatus : "IN_AGENCY"});
+        console.log("asd "+h);
+        obj = {
+          ...a[i],
+          soluong : h
+        } 
+        arr.push(obj)  
+      }
+    }
+    console.log(arr);
+    if(arr == undefined || arr == "" || arr == null){     
+      return res.json({err: true, message: "không có thương nhân mua bán hay cửa hàng bán lẻ nào"})
+    }else{
+      return res.json({err: false, data: arr})
+    }
+  },
+
+  // kiem tra ton kho
+  // checkInventory : async function(req, res){
+  //   const idUser = req.body.idUser;
+  //   let kind = await User.find({_id : idUser}).limit(1);
+  //   if(kind[0].userType === "Factory"){
+  //     let data = await Cylinder.count({current : idUser, placeStatus : "IN_FACTORY"});
+  //     console.log("thuong nhan so huu "+data);
+  //     return res.json({err: false, data: data});     
+  //   }else if( kind[0].userType === "General"){
+  //     let data = await Cylinder.count({current : idUser, placeStatus : "IN_GENERAL"});
+  //     console.log("thuong nhan mua ban "+data);   
+  //     return res.json({err: false, data: data}); 
+  //   }else if( kind[0].userType === "Agency"){
+  //     let data = await Cylinder.count({current : idUser, placeStatus : "IN_AGENCY"});
+  //     console.log("cua hang ban le "+data); 
+  //     return res.json({ error: false, data: data});  
+  //   }   
+  // },
+  /**
+	 * Action for /report/getCustomer
+	 * @param destination,
+	 * @param res
+	 * @returns {*}
+	 */
+  getCustomers: async function (req, res) {
+    const user = req.userInfo;
+
+    if(user.userType !== USER_TYPES.Agency || (user.userRole !== 'SuperAdmin' && user.userRole !== 'Owner')) {
+      return res.ok(Utils.jsonErr('Bạn không có quyền coi thông tin này'));
+    }
+
+    let page = parseInt(req.query.page);
+    if(!page) {page = 1;}
+
+    let limit =  parseInt(req.query.limit);
+    if(!limit) {limit = 10;}
+
+    const skip = limit * (page - 1);
+
+    const credential = {
+      owner: user.id
+    };
+
+    try {
+      const customers = await Customer.find({where: credential, limit, skip}).populate('owner').sort('createdAt ASC');
+      const count = await Customer.count({where: credential});
+      const totalItem = (page - 1) * limit + customers.length;
+
+      const response = {
+        data: customers,
+        isHasNext: totalItem < count
+      };
+      return res.ok(response);
+    } catch (error) {
+      return res.ok(Utils.jsonErr(error));
+    }
+  },
+
+  /**
+	 * Action for /report/reportCylinder
+	 * @param destination,
+	 * @param res
+	 * @returns {*}
+	 */
+  reportCylinder: async function (req, res) {
+    const user = req.userInfo;
+
+    if(user === null || user === 'undefined') {return res.notFound(err);}
+    try {
+      let data = await ReportServices.getReportForFactory(user,req, res);
+
+      return res.ok(data);
+    } catch (err) {
+      return res.ok(Utils.jsonErr(err.message));
+    }
+  },
+
+  /**
+	 * Action for /report/reportChartData
+	 * @param destination,
+	 * @param res
+	 * @returns {*}
+	 */
+  reportChartData: async function (req, res) {
+    const user = req.userInfo;
+
+    if(user === null || user === 'undefined') {return res.notFound(err);}
+    try {
+      let data = await ReportServices.getChartData(user, req, res);
+
+      return res.ok(data);
+    } catch (err) {
+      return res.ok(Utils.jsonErr(err.message));
+    }
+  },
+
+
+  /**
+	 * Action for /report/getReportFilters
+	 * @param destination,
+	 * @param res
+	 * @returns {*}
+	 */
+  getReportFilters: async function (req, res) {
+    const user = req.userInfo;
+
+    if(user.userType !== USER_TYPES.Agency || (user.userRole !== 'SuperAdmin' && user.userRole !== 'Owner')) {
+      return res.ok(Utils.jsonErr('Bạn không có quyền coi thông tin này'));
+    }
+
+    try {
+      let data = await ReportServices.getReportFilter(user, res);
+      return res.ok(data);
+    } catch (err) {
+      return res.ok(Utils.jsonErr(err.message));
+    }
+  },
+
+  /**
+	 * Action for /report/getInventoryInfo
+	 * @param destination,
+	 * @param res
+	 * @returns {*}
+	 */
+  getInventoryInfo: async function (req, res) {
+    const targetId = req.query.target_id;
+    const factoryId = req.query.factory_id;
+
+    if(!targetId) {return res.badRequest(Utils.jsonErr('target_id is required'));}
+
+    if(!factoryId) {return res.badRequest(Utils.jsonErr('factory_id is required'));}
+
+    try {
+      const userInfo = await User.findOne({id: targetId});
+
+      if(!userInfo) {return res.notFound();}
+
+      const inventoryInfo = await ReportServices.getInventoryOfBranch(userInfo, factoryId);
+      return res.ok(inventoryInfo);
+    } catch (error) {
+      return res.serverError(Utils.jsonErr(error.message));
+    }
+  },
+  /**
+	 * Action for /report/getChildAndNumberImportByDateTime
+	 * @param destination,
+	 * @param res
+	 * @returns {*}
+	 */
+  getChildAndNumberImportByDateTime: async function (req, res) {
+
+    //targetId la Id cua nguoi duoc chon
+    const targetId = req.body.target_id;
+    const startDate=req.body.start_date;
+    const endDate = req.body.end_date;
+
+    if(!targetId) {return res.badRequest(Utils.jsonErr('target_id is required'));}
+
+    try {
+      const userInfo = await User.findOne({id: targetId});
+
+      if(!userInfo) {return res.notFound();}
+
+      const dataInfo = await ReportServices.getChildAndNumberImportByDateTime(userInfo,startDate,endDate);
+      return res.ok(dataInfo);
+    } catch (error) {
+      return res.serverError(Utils.jsonErr(error.message));
+    }
+  },
+
+  /**
+	 * Action for /report/getCustomerReport
+	 * @param destination,
+	 * @param res
+	 * @returns {*}
+	 */
+  getCustomerReport: async function (req, res) {
+
+    //parentRoot
+    const parentRoot = req.body.parent_root;
+
+    if(!parentRoot) {return res.badRequest(Utils.jsonErr('parent_root is required'));}
+
+    try {
+      const reports = await Report.find().populate('cylinder');
+
+      const reportTargets = reports.filter(report => (report.cylinder && report.cylinder.factory === parentRoot));
+      return res.ok(reportTargets);
+    } catch (error) {
+      return res.serverError(Utils.jsonErr(error.message));
+    }
+  },
+
+  /**
+	 * Action for /report/getTurnBackInfo
+	 * @param factory_id,
+	 * @param res
+	 * @returns {*}
+	 */
+  getTurnBackInfo: async function (req, res) {
+    const targetId = req.body.target_id;
+    const factoryId = req.body.factory_id;
+
+    if(!targetId) {return res.badRequest(Utils.jsonErr('target_id is required'));}
+    if(!factoryId) {return res.badRequest(Utils.jsonErr('factory_id is required'));}
+    try {
+
+      const userInfo = await _validateUser(targetId, res);
+      const data = await ReportServices.getTurnBackInfo(userInfo, factoryId, req.body.begin, req.body.end);
+      return res.ok(data);
+    } catch (error) {
+      return res.serverError(Utils.jsonErr(error.message));
+    }
+  },
+
+  /**
+	 * Action for /report/getTurnBackDetails
+	 * @param cylinder_ids,
+	 * @param res
+	 * @returns {*}
+	 */
+  getTurnBackCylinders: async function (req, res) {
+    const listCylindersId = req.body.cylinder_ids;
+
+    if(!listCylindersId) {return res.badRequest(Utils.jsonErr('cylinder_ids is required'));}
+    try {
+      const cylinders = await Cylinder.find({id: listCylindersId}).populate('manufacture');
+      return res.ok(cylinders);
+    } catch (error) {
+      return res.serverError(Utils.jsonErr(error.message));
+    }
+  },
+
+  /**
+	 * Action for /report/getCylinderHistoryExcels
+	 * @param history_Ids,
+	 * @param res
+	 * @returns {*}
+	 */
+  getCylinderExcels: async function (req, res) {
+    const targetId = req.query.history_id;
+
+    if(!targetId) {return res.badRequest(Utils.jsonErr('history_id is required'));}
+    try {
+      const data = await History.findOne({id: targetId}).populate('cylinders');
+
+      const heading = [
+        [
+          'Thông tin bình',
+          // {value: 'Sản xuất tại', style: styles.cellGreen},
+          // {value: 'Đang ở tại', style: styles.cellGreen},
+          // {value: 'Màu Sắc', style: styles.cellGreen},
+          // {value: 'Ngày kiểm định', style: styles.cellGreen},
+          // {value: 'Cân nặng', style: styles.cellGreen},
+          // {value: 'Giá bán', style: styles.cellGreen}
+        ],
+      ];
+
+      //Here you specify the export structure
+      const specification = {
+        serial: { // <- the key should match the actual data key
+          displayName: 'Số Serial', // <- Here you specify the column header
+          headerStyle: styles.cellGreen, // <- Header style
+          // cellStyle: function(value, row) { // <- style renderer function
+          //   // if the status is 1 then color in green else color in red
+          //   // Notice how we use another cell value to style the current one
+          //   return (row.status_id === 1) ? styles.cellGreen : {fill: {fgColor: {rgb: 'FFFF0000'}}}; // <- Inline cell style is possible
+          // },
+          width: 120 // <- width in pixels
+        },
+        color: {
+          displayName: 'Màu Sắc',
+          headerStyle: styles.cellGreen,
+          // cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+          //   return (value === 1) ? 'Active' : 'Inactive';
+          // },
+          width: 100 // <- width in chars (when the number is passed as string)
+        },
+        checkedDate: {
+          displayName: 'Ngày kiểm định',
+          headerStyle: styles.cellGreen,
+          // cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+          //   return (value === 1) ? 'Active' : 'Inactive';
+          // },
+          width: 100 // <- width in chars (when the number is passed as string)
+        },
+        weight: {
+          displayName: 'Cân nặng',
+          headerStyle: styles.cellGreen,
+          // cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+          //   return (value === 1) ? 'Active' : 'Inactive';
+          // },
+          width: 100 // <- width in chars (when the number is passed as string)
+        },
+        currentSalePrice: {
+          displayName: 'Giá bán',
+          headerStyle: styles.cellGreen,
+          // cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+          //   return (value === 1) ? 'Active' : 'Inactive';
+          // },
+          width: 100 // <- width in chars (when the number is passed as string)
+        }
+      };
+
+      const dataSet = await Promise.all(data.cylinders.map(async cylinder => {
+        return {
+          serial: cylinder.serial,
+          color: cylinder.color,
+          checkedDate: cylinder.checkedDate,
+          weight: cylinder.weight,
+          currentSalePrice: cylinder.currentSalePrice
+        };
+      }));
+
+      const report = excel.buildExport(
+        [ // <- Notice that this is an array. Pass multiple sheets to create multi sheet report
+          {
+            name: 'Report', // <- Specify sheet name (optional)
+            heading: heading, // <- Raw heading array (optional)
+            specification: specification,
+            data: dataSet // <-- Report data
+          }
+        ]
+      );
+
+      res.setHeader('Content-disposition', 'attachment; filename=report.xlsx');
+      res.setHeader('Content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      return res.send(report);
+      //return res.xls('test.xlsx', data.cylinders);
+    } catch (error) {
+      return res.serverError(Utils.jsonErr(error.message));
+    }
+  },
+
+  /**
+	 * Action for /report/getReportExcels
+	 * @param history_Ids,
+	 * @param res
+	 * @returns {*}
+	 */
+  getReportExcels: async function (req, res) {
+    const targetIds = req.body.target_ids;
+    const actionType = req.body.action_type;
+    const parentRoot = req.body.parent_root;
+    const startDate=req.body.start_date;
+    const endDate = req.body.end_date;
+
+
+    if(!targetIds || targetIds.length === 0) {return res.badRequest(Utils.jsonErr('target_ids is required'));}
+    if(!actionType) {return res.badRequest(Utils.jsonErr('action_type is required'));}
+    try {
+      const targetUser = await User.find({id: targetIds});
+
+      const heading = [
+        [
+          `Thông tin Report ${_getNameAction(actionType, targetUser[0].userType)}`
+        ],
+      ];
+
+      //Here you specify the export structure
+      const specification = actionType==='TURN_BACK' ? {
+        serial: { // <- the key should match the actual data key
+          displayName: 'Số Serial', // <- Here you specify the column header
+          headerStyle: styles.cellGreen, // <- Header style
+          // cellStyle: function(value, row) { // <- style renderer function
+          //   // if the status is 1 then color in green else color in red
+          //   // Notice how we use another cell value to style the current one
+          //   return (row.status_id === 1) ? styles.cellGreen : {fill: {fgColor: {rgb: 'FFFF0000'}}}; // <- Inline cell style is possible
+          // },
+          width: 120 // <- width in pixels
+        },
+        color: {
+          displayName: 'Màu Sắc',
+          headerStyle: styles.cellGreen,
+          // cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+          //   return (value === 1) ? 'Active' : 'Inactive';
+          // },
+          width: 100 // <- width in chars (when the number is passed as string)
+        },
+        checkedDate: {
+          displayName: 'Ngày kiểm định',
+          headerStyle: styles.cellGreen,
+          // cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+          //   return (value === 1) ? 'Active' : 'Inactive';
+          // },
+          width: 100 // <- width in chars (when the number is passed as string)
+        },
+        weight: {
+          displayName: 'Cân nặng',
+          headerStyle: styles.cellGreen,
+          cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+            return value + ' kg';
+          },
+          width: 100 // <- width in chars (when the number is passed as string)
+        },
+        weightReturn: {
+          displayName: 'Cân nặng hồi lưu',
+          headerStyle: styles.cellGreen,
+          cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+            return value + ' kg';
+          },
+          width: 100 // <- width in chars (when the number is passed as string)
+        },
+        weightTexcess : {
+          displayName: 'Cân nặng thừa',
+          headerStyle: styles.cellGreen,
+          cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+            return value + ' kg';
+          },
+          width: 100 // <- width in chars (when the number is passed as string)
+        },
+        dynamicDate: {
+          displayName: `Ngày ${_getNameAction(actionType, targetUser[0].userType)}`,
+          headerStyle: styles.cellGreen,
+          // cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+          //   return value + 'kg';
+          // },
+          width: 100 // <- width in chars (when the number is passed as string)
+        },
+        dynamicPlace: {
+          displayName: `Nơi ${_getNameAction(actionType, targetUser[0].userType, true)}`,
+          headerStyle: styles.cellGreen,
+          // cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+          //   return (value === 1) ? 'Active' : 'Inactive';
+          // },
+          width: 100 // <- width in chars (when the number is passed as string)
+        }
+      } :
+      
+      {
+        serial: { // <- the key should match the actual data key
+          displayName: 'Số Serial', // <- Here you specify the column header
+          headerStyle: styles.cellGreen, // <- Header style
+          // cellStyle: function(value, row) { // <- style renderer function
+          //   // if the status is 1 then color in green else color in red
+          //   // Notice how we use another cell value to style the current one
+          //   return (row.status_id === 1) ? styles.cellGreen : {fill: {fgColor: {rgb: 'FFFF0000'}}}; // <- Inline cell style is possible
+          // },
+          width: 120 // <- width in pixels
+        },
+        color: {
+          displayName: 'Màu Sắc',
+          headerStyle: styles.cellGreen,
+          // cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+          //   return (value === 1) ? 'Active' : 'Inactive';
+          // },
+          width: 100 // <- width in chars (when the number is passed as string)
+        },
+        checkedDate: {
+          displayName: 'Ngày kiểm định',
+          headerStyle: styles.cellGreen,
+          // cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+          //   return (value === 1) ? 'Active' : 'Inactive';
+          // },
+          width: 100 // <- width in chars (when the number is passed as string)
+        },
+        weight: {
+          displayName: 'Cân nặng',
+          headerStyle: styles.cellGreen,
+          cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+            return value + ' kg';
+          },
+          width: 100 // <- width in chars (when the number is passed as string)
+        },
+        // weightReturn: {
+        //   displayName: 'Cân nặng hồi lưu',
+        //   headerStyle: styles.cellGreen,
+        //   cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+        //     return value + ' kg';
+        //   },
+        //   width: 100 // <- width in chars (when the number is passed as string)
+        // },
+        // weightTexcess : {
+        //   displayName: 'Cân nặng thừa',
+        //   headerStyle: styles.cellGreen,
+        //   cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+        //     return value + ' kg';
+        //   },
+        //   width: 100 // <- width in chars (when the number is passed as string)
+        // },
+        dynamicDate: {
+          displayName: `Ngày ${_getNameAction(actionType, targetUser[0].userType)}`,
+          headerStyle: styles.cellGreen,
+          // cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+          //   return value + 'kg';
+          // },
+          width: 100 // <- width in chars (when the number is passed as string)
+        },
+        dynamicPlace: {
+          displayName: `Nơi ${_getNameAction(actionType, targetUser[0].userType, true)}`,
+          headerStyle: styles.cellGreen,
+          // cellFormat: function(value, row) { // <- Renderer function, you can access also any row.property
+          //   return (value === 1) ? 'Active' : 'Inactive';
+          // },
+          width: 100 // <- width in chars (when the number is passed as string)
+        }
+      }   
+      
+      const dataSet = await ReportServices.getDataForReport(targetUser, actionType, parentRoot, startDate, endDate);
+
+      const report = excel.buildExport(
+        [ // <- Notice that this is an array. Pass multiple sheets to create multi sheet report
+          {
+            name: 'Report', // <- Specify sheet name (optional)
+            heading: heading, // <- Raw heading array (optional)
+            specification: specification,
+            data: dataSet // <-- Report data
+          }
+        ]
+      );
+
+      res.setHeader('Content-disposition', 'attachment; filename=report.xlsx');
+      res.setHeader('Content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      return res.send(report);
+      //return res.xls('test.xlsx', data.cylinders);
+    } catch (error) {
+      return res.serverError(Utils.jsonErr(error.message));
+    }
+  },
+
+  // --- --- ---
+   
+  getTopExport: async function(req, res){
+
+    if (!req.body) {
+      return res.badRequest(Utils.jsonErr('Empty body'));
+    }   
+
+    const {
+      id
+    } = req.body
+    //let dataSets = []
+
+    try {
+      let list_isChildOf = await User.find({ isChildOf: id, userRole: 'SuperAdmin' });
+      if (list_isChildOf.length > 0) {
+        let data = await Promise.all(list_isChildOf.map(async child => {
+          let dataReturn = {
+            id: '',
+            name: '',
+            numberOfCylinder: 0
+          }
+          let count_CylinderExportNumber = 0
+          let historyExport = await History.find({ from: child.id })
+          if (historyExport.length>0) {
+            historyExport.forEach(element => {
+              count_CylinderExportNumber += element.numberOfCylinder
+            });            
+          }
+          
+          dataReturn.id = child.id
+          dataReturn.name = child.name
+          dataReturn.numberOfCylinder = count_CylinderExportNumber
+
+          return dataReturn
+        }))
+
+        console.log('data count_CylinderExportNumber', data);
+        if (data.length>0) {
+          const n = data.length
+          for (i = 0; i < n - 1; i++)
+            for (j = 0; j < n - i - 1; j++) {
+              if (data[j].numberOfCylinder < data[j + 1].numberOfCylinder) {
+                let swap = data[j].numberOfCylinder
+                data[j].numberOfCylinder = data[j + 1].numberOfCylinder
+                data[j + 1].numberOfCylinder = swap
+              }
+            }
+          return res.json({ error: false, data: data, message: 'thanh cong' });
+        }
+        else {
+          return res.json({ error: true, message: 'huhu' });
+        }
+      }   
+      else {
+        return res.json({ error: false, message: 'Khong co TNMB, cong ty con, dai ly nao' });
+      }   
+    }
+    catch(err) {
+      return res.json({ error: true, message: err.message }); 
+    }
+  },
+
+};
+
+_validateUser = async function (userId, res) {
+  try {
+    const userInfo = await User.findOne({id: userId});
+    if(!userInfo) {throw res.notFound();}
+    if(userInfo.userType !== USER_TYPES.Factory || (userInfo.userRole !== USER_ROLE.SUPER_ADMIN && userInfo.userRole !== USER_ROLE.OWNER)) {
+      return res.badRequest(Utils.jsonErr('Bạn không có quyền coi thông tin này'));
+    }
+    return userInfo;
+  } catch (err) {
+    return res.serverError(Utils.jsonErr(err.message));
+  }
+};
+
+_getNameAction = function (action, userType, isDestination = false) {
+  switch(action) {
+    case 'IMPORT':
+      if(userType === USER_TYPES.Factory){ return isDestination ? 'Nhập vỏ từ' : 'Nhập vỏ';}
+      return isDestination ? 'Nhập hàng từ' : 'Nhập hàng';
+    case 'EXPORT':
+      return isDestination ? 'Xuất hàng đến' : 'Xuất hàng';
+    case 'EXPORT_CELL':
+      return isDestination ? 'Xuất vỏ đến' : 'Xuất vỏ';
+    case 'TURN_BACK':
+      return 'Hồi lưu';
+    case 'FIX':
+      return 'Xuất sửa chữa';
+    case 'CREATE':
+      return 'Bình đã tạo';
+  }
+};

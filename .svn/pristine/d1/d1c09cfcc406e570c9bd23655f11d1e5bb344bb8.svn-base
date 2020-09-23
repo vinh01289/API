@@ -1,0 +1,92 @@
+
+
+module.exports = {
+    createSchedule: async function (req, res) {
+        if (!req.body) {
+            return res.badRequest(Utils.jsonErr('Empty body'));
+        }
+
+        const {
+            tittle,
+            idCheckingAt,
+            idStaff,
+            idInspector,
+            location,
+            maintenanceType,
+            maintenanceDate
+        } = req.body
+
+
+        try {
+            const schedule = await InspectionSchedule.create({
+                tittle,
+                idCheckingAt,
+                idStaff,
+                idInspector,
+                location,
+                maintenanceType,
+                maintenanceDate
+            }).fetch();
+
+            if (schedule) {
+                return res.json({ success: true, message: "Thêm schedule thành công" });
+            }
+            else {
+                return res.json({ success: false, message: "Thêm schedule không thành công" });
+            }
+        }
+        catch (err) {
+            return res.json({ success: false, message: err.message });
+        }
+    },
+
+    getSchedule: async function (req, res) {
+        if (!req.body) {
+            return res.badRequest(Utils.jsonErr('Empty body'));
+        }
+
+        const {
+            id
+        } = req.body
+
+        // try {
+        //     const scheduleDate = await InspectionSchedule.find({
+        //         where: { idCheckingAt: id },
+        //         select: ['maintenanceDate']
+        //     });
+
+        //     if (scheduleDate) {
+        //         return res.json({ success: true, message: "Thêm schedule thành công" });
+        //     }
+        //     else {
+        //         return res.json({ success: false, message: "Thêm schedule không thành công" });
+        //     }
+        // }
+        // catch (err) {
+        //     return res.json({ success: false, message: err.message });
+        // }
+
+        let obj = {};
+        let arr = [];
+        if (id) {
+            let data = await InspectionSchedule.find({ idInspector: id });
+            //console.log(data[0].maintenanceDate);
+            let obj = {};
+            let arr = [];
+            for (let i = 0; i < data.length; i++) {
+                obj = { idSchedule: data[i].id, maintenanceDate: data[i].maintenanceDate }
+                arr.push(obj);
+            }
+
+            if (arr) {
+                return res.json({ error: false, maintenanceDate: arr });
+            }
+            else {
+                return res.json({ error: true, message: "không có lịch bảo trì" });
+            }
+        }
+        else {
+            return res.json({ error: true, data: arr });
+        }
+    }
+}

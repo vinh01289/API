@@ -1,0 +1,42 @@
+/**
+ * Log.js
+ *
+ * @description :: A model definition represents a database table/collection.
+ * @docs        :: https://sailsjs.com/docs/concepts/models-and-orm/models
+ */
+
+module.exports = {
+
+  attributes: {
+
+    type: {
+      type: 'string',
+      required: true
+    },
+
+    content: {
+      type: 'string',
+      required: true
+    },
+
+    status: {
+      type: 'boolean',
+      required: true
+    },
+
+    createdAt: {
+      type: 'string',
+      columnType: 'datetime',
+      autoCreatedAt: true
+    },
+    createBy: {
+      model: 'user'
+    },
+    updateBy: {
+        model: 'user'
+    }
+
+  },
+
+};
+

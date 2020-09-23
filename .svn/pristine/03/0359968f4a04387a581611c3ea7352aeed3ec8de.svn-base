@@ -1,0 +1,913 @@
+/**
+ * UserController
+ *
+ * @description :: Server-side logic for managing Users
+ * @help        :: See http://sailsjs.org/#!/documentation/concepts/Controllers
+ */
+
+
+const API_ERRORS = require('../constants/APIErrors');
+const validator = require('validator');
+const passValidator = require('password-validator');
+const USER_TYPE = require('../constants/UserTypes');
+const USER_ROLE = require('../constants/UserRoles');
+
+
+//var {uploadF}     = require("../../middleware/multer.middleware");
+// uploadF.single('avatar');
+
+
+const passSchema = new passValidator();
+const passMinLen = 6;
+const passMaxLen = 24;
+
+// Scheme for password validation
+// See ref https://github.com/tarunbatra/password-validator
+passSchema
+  .is().min(passMinLen)
+  .is().max(passMaxLen)
+  .has().letters()
+  .has().digits();
+
+module.exports = {
+
+  findNew: async function (req, res) {
+    let user = await User
+      .find({ userType: req.query.userType })
+      .populate('isChildOf');
+    res.ok(user);
+  },
+
+  /**
+	 * Action for /user
+	 * @param req
+	 * @param res
+	 */
+  index: function (req, res) {
+
+    // We use here req.userInfo which is set in policies/jwtAuth.js
+    res.ok({
+      id: req.userInfo.id,
+      email: req.userInfo.email
+    });
+  },
+
+
+  /**
+	 * Action for /user/info
+	 * @param req
+	 * @param res
+	 */
+  info: async function (req, res) {
+
+    // We use here req.userInfo which is set in policies/jwtAuth.js
+    let user = await User
+      .findOne({ id: req.userInfo.id })
+      .populate('relations');
+    res.ok(user);
+  },
+
+  /**
+	 * Action for /user/info
+	 * @param req
+	 * @param res
+	 */
+  me: function (req, res) {
+    let user = User
+      .findOne({ id: req.userInfo.id })
+      .populate('relations');
+    return res.ok(user);
+  },
+
+
+  /**
+	 * Action for /user/addUser
+	 * @param email, name, password,address,userType
+	 * @param res
+	 * @returns {*}
+	 */
+  addUser: async function (req, res) {
+    if (!req.body) {
+      return res.badRequest(Utils.jsonErr('Empty body'));
+    }
+    const email = req.body.email;
+    const name = req.body.name;
+    const address = req.body.address;
+    const password = req.body.password;
+    const userType = req.body.userType;
+    const userRole = req.body.userRole;
+    const relations = req.body.relations;
+    const owner = req.body.owner;
+    const isChildOf = req.body.isChildOf;
+    const code = req.body.code;
+
+    // thông tin nhãn hàng
+    
+
+
+    if (!email || !validator.isEmail(email)) {
+      return res.badRequest(Utils.jsonErr('Tài khoản không đúng'));
+    }
+
+    if (!name) {
+      return res.badRequest(Utils.jsonErr('Name is required'));
+    }
+
+    if (!code) {
+      return res.badRequest(Utils.jsonErr('Code is required'));
+    }
+
+    if (!address) {
+      return res.badRequest(Utils.jsonErr('Address is required'));
+    }
+    if (!userType) {
+      return res.badRequest(Utils.jsonErr('UserType is required'));
+    }
+
+    if (!passSchema.validate(password)) {
+      return res.badRequest(Utils.jsonErr('Password must be 6-24 characters, including letters and digits'));
+    }
+
+    const result = await UserManager.createUser({ email, password, name, address, userType, userRole, isChildOf, owner, code });
+    if (!result.success) { return res.badRequest({ message: result.err }); }
+
+    res.created(result.data);
+  },
+
+
+  /**
+	 * Action for /user/create
+	 * @param email, password, password_confirm
+	 * @param res
+	 * @returns {*}
+	 */
+  create: async function (req, res) {
+    if (!req.body) {
+      return res.badRequest(Utils.jsonErr('Empty body'));
+    }
+
+    const email = req.body.email;
+    const name = req.body.name;
+    const address = req.body.address;
+    const password = req.body.password;
+    const passwordConfirm = req.body.password_confirm;
+    const userType = req.body.userType;
+    const userRole = req.body.userRole;
+    const relations = req.body.relations;
+    const owner = req.body.owner;
+    const isChildOf = req.body.isChildOf;
+    const createBy = req.body.idUser;
+    const LAT = req.body.LAT;
+    const LNG = req.body.LNG;
+    const code = req.body.code;
+    const trademark = "";
+    const origin = "";
+    const addressAt = "";
+    const mass = "";
+    const ingredient = "";
+    const preservation = "";
+    const appliedStandard = "";
+
+    if (!email || !validator.isEmail(email)) {
+      return res.badRequest(Utils.jsonErr('Tài khoản không đúng'));
+    }
+
+    if (!name) {
+      return res.badRequest(Utils.jsonErr('Name is required'));
+    }
+
+    if (!code) {
+      return res.badRequest(Utils.jsonErr('code is required'));
+    }
+
+    if (!address) {
+      return res.badRequest(Utils.jsonErr('Address is required'));
+    }
+
+    if (password !== passwordConfirm) {
+      return res.badRequest(Utils.jsonErr('Password does not match'));
+    }
+
+    if (!passSchema.validate(password)) {
+      return res.badRequest(Utils.jsonErr('Password must be 6-24 characters, including letters and digits'));
+    }
+
+    const result = await UserManager.createUser({
+      email, password, name, address, userType, userRole, isChildOf, owner,trademark, origin,
+      addressAt, mass, ingredient, preservation, appliedStandard, createBy,LAT,LNG, code
+    });
+    if (!result.success) { return res.badRequest({ message: result.err }); }
+
+    res.created(result.data);
+  },
+
+
+  /**
+	 * Action for /user/login
+	 * @param req email, password
+	 * @param res
+	 * @returns {*}
+	 */
+  login: function (req, res) {
+    if (!req.body) {
+      return res.badRequest(Utils.jsonErr('Empty body'));
+    }
+
+    const email = req.body.email;
+    const password = req.body.password;
+
+    if (!email || !validator.isEmail(email)) {
+      return res.badRequest(Utils.jsonErr('Tài khoản không đúng'));
+    }
+
+    if (!password) {
+      return res.badRequest(Utils.jsonErr('Tài khoản hoặc mật khẩu không đúng'));
+    }
+
+    UserManager.authenticateUserByPassword(email, password)
+      .then(async ({ user, token }) => {
+        user.parentRoot = user.userType === USER_TYPE.Factory && user.userRole === USER_ROLE.SUPER_ADMIN ? user.id : await getRootParent(user.isChildOf);
+        console.log('Controller login', { user, token });
+        return res.ok({ user, token });
+      })
+      .catch(err => {
+        switch (err) {
+          case API_ERRORS.INVALID_EMAIL_PASSWORD:
+          case API_ERRORS.USER_NOT_FOUND:
+            return res.badRequest(Utils.jsonErr('Tài khoản hoặc mật khẩu không đúng'));
+          case API_ERRORS.USER_LOCKED:
+            return res.forbidden(Utils.jsonErr('Account locked'));
+          default:
+            /* istanbul ignore next */
+            return res.serverError(Utils.jsonErr(err));
+        }
+      });
+  },
+
+
+  /**
+	 * Action for /user/forgot
+	 * @param req
+	 * @param res
+	 * @returns {*}
+	 */
+  forgotPassword: function (req, res) {
+    if (!req.body) {
+      return res.badRequest(Utils.jsonErr('Empty body'));
+    }
+
+    const email = req.body.email;
+
+    if (!email || !validator.isEmail(email)) {
+      return res.badRequest(Utils.jsonErr('Tài khoản không đúng'));
+    }
+
+    UserManager
+      .generateResetToken(email)
+      .then(() => {
+        res.ok({ message: 'Check your email' });
+      })
+      .catch(err => {
+        if (err === API_ERRORS.USER_NOT_FOUND) {
+          return res.notFound(Utils.jsonErr('User not found'));
+        }
+        /* istanbul ignore next */
+        return res.serverError(Utils.jsonErr(err));
+      });
+  },
+
+  /**
+	 * Action for /user/updateChild
+	 * @param req
+	 * @param res
+	 * @returns {*}
+	 */
+  updateChild: async function (req, res) {
+    if (!req.body) {
+      return res.badRequest(Utils.jsonErr('Empty body'));
+    }
+
+    const user = req.userInfo;
+
+    const targetId = req.body.target_id;
+    const name = req.body.name;
+    const shortName = req.body.short_name;
+    const address = req.body.address;
+    const newPassword = req.body.new_password;
+
+
+    if (!targetId) {
+      return res.badRequest(Utils.jsonErr('Missing target_id'));
+    }
+
+    if (newPassword && !passSchema.validate(newPassword)) {
+      return res.badRequest(Utils.jsonErr('Password must be 6-24 characters, including letters and digits'));
+    }
+
+    try {
+      const targetUser = await User.findOne({ id: targetId });
+
+      if (targetUser.isChildOf !== user.id) {
+        return res.badRequest(Utils.jsonErr('You don\'t have permission to change info of this account'));
+      }
+      let userChangeInfo = {};
+      if (name) {
+        userChangeInfo.name = name;
+      }
+      if (shortName) {
+        userChangeInfo.shortName = shortName;
+      }
+      if (address) {
+        userChangeInfo.address = address;
+      }
+
+      UserManager
+        .updateUser(targetUser, newPassword, userChangeInfo)
+        .then((updatedChild) => {
+          return res.ok({ updatedChild });
+        })
+        .catch(err => {
+          throw err;
+        });
+
+    } catch (error) {
+      return res.serverError(Utils.jsonErr(error));
+    }
+  },
+
+
+  /**
+	 * Action for /user/change_password
+	 * @param req
+	 * @param res
+	 * @returns {*}
+	 */
+  changePassword: function (req, res) {
+    if (!req.body) {
+      return res.badRequest(Utils.jsonErr('Empty body'));
+    }
+
+    const email = req.body.email;
+    const currentPassword = req.body.password;
+    const newPassword = req.body.new_password;
+    const newPasswordConfirm = req.body.new_password_confirm;
+
+
+    if (!email || !validator.isEmail(email)) {
+      return res.badRequest(Utils.jsonErr('Tài khoản không đúng'));
+    }
+
+    if (!currentPassword) {
+      return res.badRequest(Utils.jsonErr('Current password is required'));
+    }
+
+    if (!newPassword || newPassword !== newPasswordConfirm) {
+      return res.badRequest(Utils.jsonErr('Password does not match'));
+    }
+
+    if (!passSchema.validate(newPassword)) {
+      return res.badRequest(Utils.jsonErr('Password must be 6-24 characters, including letters and digits'));
+    }
+
+    UserManager
+      .changePassword(email, currentPassword, newPassword)
+      .then((updatedUser) => {
+        return res.ok({ updatedUser });
+      })
+      .catch(err => {
+        switch (err) {
+          case API_ERRORS.USER_NOT_FOUND:
+            return res.badRequest(Utils.jsonErr('Email not found'));
+
+          // Processed by 'Invalid token' from policy
+          // case API_ERRORS.USER_LOCKED:
+          // 	return res.forbidden(Utils.jsonErr('Account locked'));
+
+          case API_ERRORS.INVALID_PASSWORD:
+            return res.badRequest(Utils.jsonErr('Invalid password'));
+          default:
+            /* istanbul ignore next */
+            return res.serverError(Utils.jsonErr(err));
+        }
+      });
+  },
+
+
+
+  /**
+	 * Action for /user/reset_password
+	 * @param req
+	 * @param res
+	 * @returns {*}
+	 */
+  resetPasswordByResetToken: function (req, res) {
+    if (!req.body) {
+      return res.badRequest(Utils.jsonErr('Empty body'));
+    }
+
+    const email = req.body.email;
+    const resetToken = req.body.reset_token;
+    const newPassword = req.body.new_password;
+    const newPasswordConfirm = req.body.new_password_confirm;
+
+    if (!email || !validator.isEmail(email)) {
+      return res.badRequest(Utils.jsonErr('Tài khoản không đúng'));
+    }
+
+    if (!resetToken) {
+      return res.badRequest(Utils.jsonErr('Reset token is required'));
+    }
+
+    if (!newPassword || newPassword !== newPasswordConfirm) {
+      return res.badRequest(Utils.jsonErr('Password does not match'));
+    }
+
+    if (!passSchema.validate(newPassword)) {
+      return res.badRequest(Utils.jsonErr('Password must be 6-24 characters, including letters and digits'));
+    }
+
+    UserManager
+      .resetPasswordByResetToken(email, resetToken, newPassword)
+      .then(() => {
+        res.ok({ message: 'Done' });
+      })
+      .catch(err => {
+        if (err === API_ERRORS.USER_NOT_FOUND) {
+          // We show Tài khoản không đúng instead of User Not Found
+          return res.badRequest(Utils.jsonErr('Tài khoản không đúng'));
+        }
+        /* istanbul ignore next */
+        return res.serverError(Utils.jsonErr(err));
+      });
+  },
+
+  /**
+	 * Action for /user/getDestination
+	 * @param req
+	 * @param res
+	 * @returns {*}
+	 */
+  getDestination: async function (req, res) {
+    const user = req.userInfo;
+
+    const userType = req.query.user_type;
+    const actionType = req.query.action_type;
+    const userRole = req.query.user_role;
+    // import, export, turn_back,
+    let query = {};
+
+    if (actionType && actionType === 'IMPORT' && user.userType !== USER_TYPE.Factory) {
+      query.id = user.isChildOf ? user.isChildOf : -11111;
+    } else {
+
+      if (user.userType === USER_TYPE.Agency) {
+        if (user.userRole === 'SuperAdmin') {
+          query.isChildOf = user.id;
+        }
+        else {
+          query.isChildOf = user.isChildOf;
+        }
+      }
+      else {
+        query.isChildOf = user.id;
+      }
+
+
+      if (userType) {
+        query.userType = userType;
+      }
+
+      if (userRole && user.userRole !== 'Staff' && user.userRole !== 'Driver') {
+        query.userRole = userRole;
+      }
+
+      if (user.userType === USER_TYPE.Factory) {
+        if (actionType === 'IMPORT') {
+          query.userType = USER_TYPE.Station;
+        }
+        if (actionType === 'EXPORT' && userType !== USER_TYPE.Station) {
+          query.userType = [USER_TYPE.Agency, USER_TYPE.General];
+        }
+      }
+
+      if (user.userType === USER_TYPE.Station) {
+        if (actionType === 'EXPORT_PARENT_CHILD') {
+          query.isChildOf = user.isChildOf;
+          delete query.userType;
+        } if (actionType === 'EXPORT') {
+          query = {
+            id: user.isChildOf
+          };
+        }
+
+      }
+    }
+    sails.log('QUERRYYY::::', query);
+
+    try {
+      let relativeUsers = await User.find(query);
+
+      if (user.userType === USER_TYPE.Station && actionType === 'EXPORT_PARENT_CHILD') {
+        const childs = await User.find({ isChildOf: user.id });
+        relativeUsers = relativeUsers.concat(childs);
+        _.remove(relativeUsers, item => {
+          return item.id === user.id;
+        });
+      }
+
+      return res.ok(relativeUsers);
+    } catch (err) {
+      return res.badRequest({ message: err.message });
+    }
+  },
+
+  /**
+	 * Action GET for /user/getAllFactory
+	 * @param req
+	 * @param res
+	 * @returns {partner}
+	 */
+  getAllFactory: async function (req, res) {
+    const user = req.userInfo;
+    const searchWord = req.query.search;
+
+    let page = parseInt(req.query.page);
+    if (!page) { page = 1; }
+
+    let limit = parseInt(req.query.limit);
+    if (!limit) { limit = 10; }
+
+    const skip = limit * (page - 1);
+
+    try {
+      let partners = [];
+      let count = 0;
+      if (searchWord) {
+        partners = await User.find({ where: { isChildOf: { '!=': user.id }, userType: USER_TYPE.Factory, id: { '!=': user.id }, or: [{ name: { contains: searchWord } }, { email: { contains: searchWord } }, { address: { contains: searchWord } }] }, limit, skip });
+        count = await User.count({ isChildOf: { '!=': user.id }, userType: USER_TYPE.Factory, id: { '!=': user.id }, or: [{ name: { contains: searchWord } }, { email: { contains: searchWord } }, { address: { contains: searchWord } }] });
+      } else {
+        partners = await User.find({ where: { isChildOf: { '!=': user.id }, userType: USER_TYPE.Factory, id: { '!=': user.id } }, limit, skip });
+        //const partners = await User.find({where: {userType: 'Factory', id: {'!=': user.id}}});
+        count = await User.count({ where: { isChildOf: { '!=': user.id }, userType: USER_TYPE.Factory, id: { '!=': user.id } } });
+      }
+
+      //const totalItem = (page - 1) * limit + partners.length;
+      //console.log('Maximum Item:', count);
+
+      const response = {
+        data: partners,
+        totalItem: count
+      };
+      return res.ok(response);
+    } catch (error) {
+      return res.serverError(error);
+    }
+  },
+
+  /**
+	 * Action GET for /user/getReportChilds
+	 * @param req
+	 * @param res
+	 * @returns {partner}
+	 */
+  getReportChilds: async function (req, res) {
+    const user = req.userInfo;
+    const userId = req.query.user_id;
+    const userType = req.query.user_type;
+
+    let credential = {
+      userType: userType,
+      isChildOf: userId,
+      allowReport: true
+    };
+
+    if (userType === USER_TYPE.Factory) {
+      credential.userRole = USER_ROLE.OWNER;
+    }
+
+    try {
+      let result = await User.find(credential);
+      const parentRoot = await getRootParent(userId);
+      result = result.map(child => {
+        child.parentRoot = parentRoot;
+        return child;
+      });
+
+      return res.ok(result);
+    } catch (error) {
+      return res.serverError(error);
+    }
+  },
+  // lấy cân nặng bình ga hồi lưu
+  returnGasS: async function (req, res) {
+    let { id, serialCylinder, dateReceived, weight } = req.body;
+
+    if (!serialCylinder) {
+      return res.json({
+        statuscode: 400,
+        message: "bạn chưa nhập serial binh ga"
+      });
+    }
+
+    let tmp = await Cylinder.find({ serial: serialCylinder });
+
+    if (tmp == undefined || tmp == "" || tmp == null) {
+      return res.json({
+        statuscode: 400,
+        message: "khong co serial nay trong he thong"
+      });
+    }
+    if (!id) {
+      return res.json({
+        statuscode: 400,
+        message: "bạn chưa login"
+      });
+    }
+    let IdManufacture = await tmp[0].manufacture;
+
+    console.log("id la " + IdManufacture);
+
+    if (id != IdManufacture) {
+      let name = await Manufacture.find({ _id: IdManufacture });
+      let nameCompany = name[0].name
+      console.log("namecompany la " + nameCompany);
+      return res.json({
+        statuscode: 400,
+        message: "binh gas khong thuoc so huu cua " + nameCompany
+      });
+    }
+
+    if (!dateReceived) {
+      return res.json({
+        statuscode: 400,
+        message: "bạn chưa nhập ngay hoi luu"
+      });
+    }
+    if (!weight) {
+      return res.json({
+        statuscode: 400,
+        message: "bạn chưa nhập can nang"
+      });
+    }
+
+    let data = await returnGas.create({ serialCylinder: serialCylinder, dateReceived: dateReceived, weight: weight, idCompany: id, createBy: id }).fetch();
+    console.log({ data });
+    if (data) {
+      return res.json({ error: false, data: data });
+    }
+    else {
+      return res.json({ error: true, message: 'Them that bai' });
+    }
+  },
+  // cap nhat thong tin binh gas hoi luu
+  updateReturnGas: async function (req, res) {
+    var { idCylinder, idUser, serialCylinder, dateReceived, weight } = req.body;
+    let data = await returnGas.findOne({ _id: idCylinder });
+
+    if (data == undefined || data == "" || data == null) {
+      return res.json({ error: true, message: 'cylinder Không tồn tại !' });
+    }
+    if (!serialCylinder) {
+      serialCylinder = data.serialCylinder;
+    }
+    if (!dateReceived) {
+      dateReceived = data.dateReceived;
+    }
+    if (!weight) {
+      weight = data.weight;
+    }
+    let a = await returnGas.updateOne({ _id: idCylinder })
+      .set({ serialCylinder: serialCylinder, dateReceived: dateReceived, weight: weight, updateBy: idUser });
+    if (a) {
+      return res.json({ error: false, data: a });
+    }
+    else {
+      return res.json({ error: true, message: 'loi update !' });
+    }
+  },
+  // lay danh sach binh gas hoi luu
+  getListReturnGas: async function (req, res) {
+    let data = await returnGas.find({});
+    //let data = await returnGas.find({where: {_id : "5e96d1152749f718a0e6ed6d"},select: ['serialCylinder', 'dateReceived', 'weight', 'createBy', 'updateBy','idCompany']});
+    console.log(data);
+
+    if (data) {
+      return res.json({ error: false, data: data });
+    }
+    else {
+      return res.json({ error: true, message: 'loi get !' });
+    }
+  },
+
+//  cap nhat thong tin doi tac
+//  uploadFile:  async function (req, res){   
+  updateInformationUser: async function(req, res){
+    email = req.body.email;
+    name = req.body.name;
+    address = req.body.address;
+
+    var data = await User.findOne({ email: email });
+    console.log(data);
+    if (data == undefined || data == "" || data == null) {
+      return res.json({ error: true, message: 'email Không tồn tại !' });
+    }
+    if(!name){
+      name = data.name;
+    }
+    if(!address){
+      address = data.address;
+    }
+       
+    req.file('avatar').upload({
+    dirname: require('path').resolve(__dirname, '../../assets/images')
+      
+    },async function (err, uploadedFiles) {
+      if (err) return res.serverError(err);
+      
+      let hieu = uploadedFiles[0].fd;
+      console.log(hieu);
+      
+      let data = hieu.split(/(\\|\/)/g).pop()
+      console.log(data);     
+      let a =await User.updateOne({email: email}).set({avatar: data, name: name, address: address});
+      if(a){
+        return res.json({error: false, data: a});
+      }
+      else{
+          return res.json({error: true, message: 'loi update !'});
+      }
+    });
+  },
+// lấy danh sách tài xế của thương nhân sở hữu
+getDriver: async function(req, res){
+  id = req.body.id;
+  let data = await User.find({isChildOf : id, userRole : "Deliver"});
+  console.log(data);
+  if(data){
+    return res.json({error: false, data: data});
+  }
+  else{
+      return res.json({error: true, message:"không có tài xế nào"});
+  }
+  
+},
+
+// lay ten tai xe
+listNameDriver: async function(req, res){
+  let id = req.body.id;
+  // var usersNamedFinn = await User.find({isChildOf : id, userRole :"Deliver"},{name: 1});
+  // console.log(usersNamedFinn);
+  let data = await User.find({isChildOf : id, userRole :"Deliver"});
+  console.log(data[0].name);
+  let obj = {};
+  let arr = [];
+  for(let i = 0; i < data.length; i++){
+    obj = {name: data[i].name, id : data[i].id}
+    arr.push(obj);
+  }
+  if(arr){
+    return res.json({error: false, data: arr});
+  }
+  else{
+      return res.json({error: true, message:"không có tài xế nào"});
+  }
+},
+// lay chu ky tai xe
+getSignature : async function(req, res){
+  let id = req.body.id;
+  let data = await History.find({idDriver : id}).limit(1);
+  let a = data[0].signature;
+  if(a != undefined || a != null || a != ""){
+    return res.json({err: false, data: a});
+  }else{
+    return res.json({err: true, message: "loi lay chu ky tai xe"});
+  }
+},
+// lay avatar
+getAvatar: async function(req, res){
+  email = req.body.email;
+  console.log("hehe "+ email);
+  
+  if(!email){
+    res.json({
+      statuscode: 400,
+      message : "bạn chưa nhập email"
+    })
+    return;
+  }
+  let data =  await User.find({email: email}).limit(1);
+//  let data =  await User.findOne({email: email});
+  if(data == undefined || data == null || data == ""){
+    return res.json({error: true, message: 'email Không tồn tại !'});
+  }
+  let a = await data[0].avatar;
+  console.log(a);
+  if(a){
+    return res.json({error: false, data: a});
+  }
+  else{
+      return res.json({error: true, message: 'loi get avatar !'});
+  }
+},
+
+  //  cap nhat thong tin doi tac
+  // updateInformationUser: async function(req, res){
+  //     var {email, name, address,avatar} = req.body;
+  //     if(!email){
+  //       res.json({
+  //         statuscode: 400,
+  //         message: "bạn chưa nhập email"
+  //       });
+  //       return;
+  //     }
+  //     let data = await User.findOne({email: email});
+  //     if(data == undefined || data == "" || data == null){
+  //       return res.json({error: true, message: 'email Không tồn tại !'});
+  //     }
+  //     if(!name){
+  //       name = data.name;
+  //     }
+  //     if(!address){
+  //       address = data.address;
+  //     }
+  //     if(!avatar){
+  //       avatar = data.avatar;
+  //     }
+
+  //     let a = await User.updateOne({email: email}).set({name: name, address: address, avatar: avatar});
+  //     if(a){
+  //       return res.json({error: false, data: a});
+  //     }
+  //     else{
+  //         return res.json({error: true, message: 'loi update !'});
+  //     }
+  //   },
+  // cap nhat thong tin nhan hang
+  updateBrandInformation: async function (req, res) {
+    var { email, trademark, origin, addressAt, mass, ingredient, preservation, appliedStandard, idUser } = req.body;
+
+    if (!email) {
+      res.json({
+        statuscode: 400,
+        message: "bạn chưa nhập email"
+      });
+      return;
+    }
+    var data = await User.findOne({ email: email });
+
+    if (data == undefined || data == "" || data == null) {
+      return res.json({ error: true, message: 'email Không tồn tại !' });
+    }
+
+    if (!trademark) {
+      trademark = data.trademark;
+    }
+    if (!origin) {
+      origin = data.origin;
+    }
+    if (!addressAt) {
+      addressAt = data.addressAt;
+    }
+    if (!mass) {
+      mass = data.mass;
+    }
+    if (!ingredient) {
+      ingredient = data.ingredient;
+    }
+    if (!preservation) {
+      preservation = data.preservation;
+    }
+    if (!appliedStandard) {
+      appliedStandard = data.appliedStandard;
+    }
+
+    console.log(data);
+    let a = await User.updateOne({ email: data.email }).set({
+      trademark: trademark,
+      origin: origin,
+      addressAt: addressAt,
+      mass: mass,
+      ingredient: ingredient,
+      preservation: preservation,
+      appliedStandard: appliedStandard,
+      updateBrandBy: idUser
+    });
+
+    if (a) {
+      return res.json({ error: false, data: a });
+    }
+    else {
+      return res.json({ error: true, message: 'loi updata !' });
+    }
+  }
+};
+
+// *************** Function to get root Parent of user tree
+async function getRootParent(parentId) {
+  if (parentId === null || typeof parentId === 'undefined' || parentId === '') { return ''; }
+  let parent = await User.findOne({ id: parentId });
+  if (!parent) { return ''; }
+  if (parent.userType === USER_TYPE.Factory && parent.userRole === USER_ROLE.SUPER_ADMIN) { return parent.id; }
+  return await getRootParent(parent.isChildOf);
+}
+

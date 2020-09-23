@@ -1,0 +1,107 @@
+/**
+ * Policy Mappings
+ * (sails.config.policies)
+ *
+ * Policies are simple functions which run **before** your actions.
+ *
+ * For more information on configuring policies, check out:
+ * https://sailsjs.com/docs/concepts/policies
+ */
+
+module.exports.policies = {
+
+	/***************************************************************************
+	 *                                                                          *
+	 * Default policy for all controllers and actions, unless overridden.       *
+	 * (`true` allows public access)                                            *
+	 *                                                                          *
+	 ***************************************************************************/
+
+	// '*': true,
+	'*': ['jwtAuth'],
+	'HistoryController': {
+		'sortHistoryImport' : true,
+		'sortHistoryExport' : true,
+		// 'sortHistoryImport10' : true,
+		// 'sortHistoryExport10' : true,
+		'importCylinderSkipScanWhenExport': true,
+	},
+	'UserController': {
+		'find': ['jwtAuth', 'permissionRoles'],
+		'create': true,
+		'login': true,
+		'forgotPassword': true,
+		'resetPasswordByResetToken': true,
+		//'changePassword' : true,
+		// 'updateBrandInformation': true,
+		'updateInformationUser': true,
+		'updateReturnGas' : true,
+		'getListReturnGas' : true,
+		'getAvatar' : true,
+		'getDriver' : true,
+		'listNameDriver' : true,
+		'getSignature' : true,
+		'getBrandInformation' : true,
+		
+		//'uploadFile': true
+		'returnGasS': true,
+		'getInspector': true,
+		'getStaff': true,
+		'getAllChild': true,
+
+		//'addUser': true,
+		//'getAllCompanyToFix': true,
+	},
+	// 'returnGasController':{
+	// 	'returnGas': true
+	// },
+	'CylinderController': {
+		'searchCylinders': true,
+		'getReqImport': true
+	},
+	'ReportController': {
+		'create': true,
+		//'checkInventory' : true,
+		'getListChild' : true,
+		'getTopExport': true,
+		'getInventoryInfo': true,
+	},
+
+	'ManufactureController': {
+		'find': true,
+		'updateBrandInformation' :true,
+	},
+
+	'ChecklistController': {
+		'setChecklist': true,
+		'setMonthlyChecklist': true
+	},
+
+	'InspectionScheduleController': {
+		'createSchedule': true,
+		'getSchedule': true,
+		'getListSchedule': true,
+	},
+
+	'OrderController': {
+		'getOrders': true,
+		'getOrdersOfFactory': true
+	},
+
+	// 	
+	'TestController': {
+		'getAllHistoryOfCylinder': true,
+		'getHistoryByID': true,
+	},
+
+	//
+	'RentalPartnersController': {
+		'createRentalPartners': true
+	},
+
+	//
+	'CategoryCylinderController': {
+		// 'list': true,
+		'create': true,
+	},
+};

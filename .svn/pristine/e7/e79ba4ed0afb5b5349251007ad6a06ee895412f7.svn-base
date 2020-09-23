@@ -1,0 +1,894 @@
+/**
+ * CylinderImexController
+ *
+ * @description :: Server-side actions for handling incoming requests.
+ * @help        :: See https://sailsjs.com/docs/concepts/actions
+ */
+
+module.exports = {
+
+    // Tính xuất hàng của đơn vị con trong ngày
+    getExport: async function (req, res) {
+        if (Object.keys(req.query).length === 0) {
+            return res.badRequest(Utils.jsonErr('Empty body'));
+        }
+
+        const {
+            userId,
+        } = req.query
+
+        if (!userId) {
+            return res.badRequest(Utils.jsonErr('userId is required'));
+        }
+
+        try {
+            const userInfor = await User.findOne({ id: userId })
+            if (!userInfor) {
+                return res.json({
+                    status: false,
+                    resCode: 'ERROR-00081',
+                    data: {},
+                    message: 'Không tìm thấy thông tin người dùng trong hệ thống'
+                })
+            }
+
+            // Khoảng thời gian tìm kiếm: Trong ngày
+            let today = new Date();
+            let dd = String(today.getDate()).padStart(2, '0');
+            let mm = String(today.getMonth() + 1).padStart(2, '0'); //January is 0!
+            let yyyy = today.getFullYear();
+
+            today = mm + '/' + dd + '/' + yyyy;
+
+            const startDate = new Date(today).toISOString()
+            const endDate = new Date().toISOString()
+
+            // Tìm các đơn vị con
+            // TẠM THỜI chỉ tìm các kho
+            const childs = await User.find({
+                isChildOf: userInfor.id,
+                userType: { in: ['Factory'/* , 'General', 'Agency' */] },
+                userRole: { in: [/* 'SuperAdmin', */ 'Owner'] },
+            })
+
+            if (childs.length > 0) {
+                const _data = await Promise.all(childs.map(async child => {
+                    let countData = await _countTotalActionCylinder(
+                        child.id,
+                        'EXPORT_CYLINDER',
+                        startDate,
+                        endDate,
+                    )
+
+                    // Thêm thông tin ID và tên của đơn vị con vào từng Object trả ra
+                    countData.id = child.id
+                    countData.name = child.name
+
+                    return countData
+                }))
+
+                return res.json({
+                    status: true,
+                    resCode: 'SUCCESS-00012',
+                    data: _data,
+                    message: 'Lấy thông tin thống kê thành công'
+                })
+            }
+            else {
+                return res.json({
+                    status: true,
+                    resCode: 'SUCCESS-00012',
+                    data: [],
+                    message: 'Lấy thông tin thống kê thành công'
+                })
+            }
+        }
+        catch (error) {
+            return res.json({
+                status: false,
+                resCode: 'CATCH-00001',
+                data: {
+                    error: error.message
+                },
+                message: 'Gặp lỗi khi lấy thông tin xuất hàng của đơn vị con'
+            })
+        }
+
+    },
+
+    // Tính tồn kho của các đơn vị con ở thời điểm hiện tại
+    getCurrentInventory: async function (req, res) {
+        if (Object.keys(req.query).length === 0) {
+            return res.badRequest(Utils.jsonErr('Empty body'));
+        }
+
+        const {
+            userId,
+        } = req.query
+
+        if (!userId) {
+            return res.badRequest(Utils.jsonErr('userId is required'));
+        }
+
+        try {
+            const userInfor = await User.findOne({ id: userId })
+            if (!userInfor) {
+                return res.json({
+                    status: false,
+                    resCode: 'ERROR-00082',
+                    data: {},
+                    message: 'Không tìm thấy thông tin người dùng trong hệ thống'
+                })
+            }
+
+            // Tìm tồn kho đến thời điểm hiện tại
+            const endDate = new Date().toISOString()
+
+            // Tìm các đơn vị con
+            // TẠM THỜI chỉ tìm các kho
+            const childs = await User.find({
+                isChildOf: userInfor.id,
+                userType: { in: ['Factory'/* , 'General', 'Agency' */] },
+                userRole: { in: [/* 'SuperAdmin', */ 'Owner'] },
+            })
+
+            if (childs.length > 0) {
+                const _data = await Promise.all(childs.map(async child => {
+                    const countData = await _countTotalCylinderInWarehouse(
+                        child.id,
+                        endDate,
+                    )
+
+                    // Thêm thông tin ID và tên của đơn vị con vào từng Object trả ra
+                    countData.id = child.id
+                    countData.name = child.name
+
+                    return countData
+                }))
+
+                return res.json({
+                    status: true,
+                    resCode: 'SUCCESS-00013',
+                    data: _data,
+                    message: 'Lấy thông tin thống kê thành công'
+                })
+            }
+            else {
+                return res.json({
+                    status: true,
+                    resCode: 'SUCCESS-00013',
+                    data: [],
+                    message: 'Lấy thông tin thống kê thành công'
+                })
+            }
+        }
+        catch (error) {
+            return res.json({
+                status: false,
+                resCode: 'CATCH-00002',
+                data: {
+                    error: error.message
+                },
+                message: 'Gặp lỗi khi lấy thông tin xuất hàng của đơn vị con'
+            })
+        }
+
+    },
+
+    // Thống kê
+    getStatistics: async function (req, res) {
+        if (Object.keys(req.query).length === 0) {
+            return res.badRequest(Utils.jsonErr('Empty body'));
+        }
+
+        const {
+            target,     // Id
+            startDate,  // ISODate
+            endDate,    // ISODate
+            statisticalType,    // isIn: ['byItself', 'byItsChildren']
+        } = req.query
+
+        if (!target) {
+            return res.badRequest(Utils.jsonErr('target is required'));
+        }
+
+        if (!startDate) {
+            return res.badRequest(Utils.jsonErr('startDate is required'));
+        }
+
+        if (!endDate) {
+            return res.badRequest(Utils.jsonErr('endDate is required'));
+        }
+
+        if (!statisticalType) {
+            return res.badRequest(Utils.jsonErr('statisticalType is required'));
+        }
+        else {
+            const type = ['byItself', 'byItsChildren']
+            if (!type.includes(statisticalType)) {
+                return res.badRequest(Utils.jsonErr('statisticalType is wrong'));
+            }
+        }
+
+        try {
+
+            const userInfor = await User.findOne({ id: target })
+            if (!userInfor) {
+                return res.json({
+                    status: false,
+                    resCode: 'ERROR-00083',
+                    data: {},
+                    message: 'Không tìm thấy thông tin người dùng trong hệ thống'
+                })
+            }
+
+            let returnData = {
+                // Số bình đã tạo
+                createdCylinder: {
+                    total: 0,
+                    total_CYL12KG: 0,
+                    total_CYL12KGCO: 0,
+                    total_CYL45KG: 0,
+                    total_CYL50KG: 0,
+                },
+
+                // Số bình xuất (xuất vỏ + xuất hàng)
+                outCylinder: {
+                    total: 0,
+                    total_CYL12KG: 0,
+                    total_CYL12KGCO: 0,
+                    total_CYL45KG: 0,
+                    total_CYL50KG: 0,
+                },
+
+                // Số bình hồi lưu
+                turnbackCylinder: {
+                    total: 0,
+                    total_CYL12KG: 0,
+                    total_CYL12KGCO: 0,
+                    total_CYL45KG: 0,
+                    total_CYL50KG: 0,
+                },
+
+                // Số bình tồn kho (IN - OUT)
+                inventoryCylinder: {
+                    total: 0,
+                    total_CYL12KG: 0,
+                    total_CYL12KGCO: 0,
+                    total_CYL45KG: 0,
+                    total_CYL50KG: 0,
+                },
+            }
+
+            // --- TH1: Thống kê số liệu của chính nó
+            if (statisticalType === 'byItself') {
+
+                // ===  ===  ===  Tổng số  ===  ===  ===
+                // Thống kê số bình đã tạo
+                const total_createdCylinder = await _countTotalActionCylinder(target, 'CREATED_CYLINDER', startDate, endDate)
+                if (total_createdCylinder.success) {
+                    returnData.createdCylinder.total = total_createdCylinder.count
+                }
+
+                // Thống kê số bình xuất (xuất vỏ + xuất hàng)
+                const total_outCylinder = await _countTotalActionCylinder(target, 'OUT_CYLINDER', startDate, endDate)
+                if (total_outCylinder.success) {
+                    returnData.outCylinder.total = total_outCylinder.count
+                }
+
+                // Thống kê số bình hồi lưu
+                const total_turnbackCylinder = await _countTotalActionCylinder(target, 'TURN_BACK_CYLINDER', startDate, endDate)
+                if (total_turnbackCylinder.success) {
+                    returnData.turnbackCylinder.total = total_turnbackCylinder.count
+                }
+
+                // Thống kê số bình tồn kho (IN - OUT)
+                const total_inventoryCylinder = await _countTotalCylinderInWarehouse(target, endDate)
+                if (total_inventoryCylinder.success) {
+                    returnData.inventoryCylinder.total = total_inventoryCylinder.count
+                }
+
+                // ===  ===  ===  Loại CYL12KG  ===  ===  ===
+                // Thống kê số bình đã tạo
+                const total_CYL12KG_createdCylinder = await _countTotalActionCylinderByType(target, 'CREATED_CYLINDER', startDate, endDate, 'CYL12KG')
+                if (total_CYL12KG_createdCylinder.success) {
+                    returnData.createdCylinder.total_CYL12KG = total_CYL12KG_createdCylinder.count
+                }
+
+                // Thống kê số bình xuất (xuất vỏ + xuất hàng)
+                const total_CYL12KG_outCylinder = await _countTotalActionCylinderByType(target, 'OUT_CYLINDER', startDate, endDate, 'CYL12KG')
+                if (total_CYL12KG_outCylinder.success) {
+                    returnData.outCylinder.total_CYL12KG = total_CYL12KG_outCylinder.count
+                }
+
+                // Thống kê số bình hồi lưu
+                const total_CYL12KG_turnbackCylinder = await _countTotalActionCylinderByType(target, 'TURN_BACK_CYLINDER', startDate, endDate, 'CYL12KG')
+                if (total_CYL12KG_turnbackCylinder.success) {
+                    returnData.turnbackCylinder.total_CYL12KG = total_CYL12KG_turnbackCylinder.count
+                }
+
+                // Thống kê số bình tồn kho (IN - OUT)
+                const total_CYL12KG_inventoryCylinder = await _countTotalCylinderInWarehouseByType(target, endDate, 'CYL12KG')
+                if (total_CYL12KG_inventoryCylinder.success) {
+                    returnData.inventoryCylinder.total_CYL12KG = total_CYL12KG_inventoryCylinder.count
+                }
+
+                // ===  ===  ===  Loại CYL12KGCO  ===  ===  ===
+                // Thống kê số bình đã tạo
+                const total_CYL12KGCO_createdCylinder = await _countTotalActionCylinderByType(target, 'CREATED_CYLINDER', startDate, endDate, 'CYL12KGCO')
+                if (total_CYL12KGCO_createdCylinder.success) {
+                    returnData.createdCylinder.total_CYL12KGCO = total_CYL12KGCO_createdCylinder.count
+                }
+
+                // Thống kê số bình xuất (xuất vỏ + xuất hàng)
+                const total_CYL12KGCO_outCylinder = await _countTotalActionCylinderByType(target, 'OUT_CYLINDER', startDate, endDate, 'CYL12KGCO')
+                if (total_CYL12KGCO_outCylinder.success) {
+                    returnData.outCylinder.total_CYL12KGCO = total_CYL12KGCO_outCylinder.count
+                }
+
+                // Thống kê số bình hồi lưu
+                const total_CYL12KGCO_turnbackCylinder = await _countTotalActionCylinderByType(target, 'TURN_BACK_CYLINDER', startDate, endDate, 'CYL12KGCO')
+                if (total_CYL12KGCO_turnbackCylinder.success) {
+                    returnData.turnbackCylinder.total_CYL12KGCO = total_CYL12KGCO_turnbackCylinder.count
+                }
+
+                // Thống kê số bình tồn kho (IN - OUT)
+                const total_CYL12KGCO_inventoryCylinder = await _countTotalCylinderInWarehouseByType(target, endDate, 'CYL12KGCO')
+                if (total_CYL12KGCO_inventoryCylinder.success) {
+                    returnData.inventoryCylinder.total_CYL12KGCO = total_CYL12KGCO_inventoryCylinder.count
+                }
+
+                // ===  ===  ===  Loại CYL45KG  ===  ===  ===
+                // Thống kê số bình đã tạo
+                const total_CYL45KG_createdCylinder = await _countTotalActionCylinderByType(target, 'CREATED_CYLINDER', startDate, endDate, 'CYL45KG')
+                if (total_CYL45KG_createdCylinder.success) {
+                    returnData.createdCylinder.total_CYL45KG = total_CYL45KG_createdCylinder.count
+                }
+
+                // Thống kê số bình xuất (xuất vỏ + xuất hàng)
+                const total_CYL45KG_outCylinder = await _countTotalActionCylinderByType(target, 'OUT_CYLINDER', startDate, endDate, 'CYL45KG')
+                if (total_CYL45KG_outCylinder.success) {
+                    returnData.outCylinder.total_CYL45KG = total_CYL45KG_outCylinder.count
+                }
+
+                // Thống kê số bình hồi lưu
+                const total_CYL45KG_turnbackCylinder = await _countTotalActionCylinderByType(target, 'TURN_BACK_CYLINDER', startDate, endDate, 'CYL45KG')
+                if (total_CYL45KG_turnbackCylinder.success) {
+                    returnData.turnbackCylinder.total_CYL45KG = total_CYL45KG_turnbackCylinder.count
+                }
+
+                // Thống kê số bình tồn kho (IN - OUT)
+                const total_CYL45KG_inventoryCylinder = await _countTotalCylinderInWarehouseByType(target, endDate, 'CYL45KG')
+                if (total_CYL45KG_inventoryCylinder.success) {
+                    returnData.inventoryCylinder.total_CYL45KG = total_CYL45KG_inventoryCylinder.count
+                }
+
+                // ===  ===  ===  Loại CYL50KG  ===  ===  ===
+                // Thống kê số bình đã tạo
+                const total_CYL50KG_createdCylinder = await _countTotalActionCylinderByType(target, 'CREATED_CYLINDER', startDate, endDate, 'CYL50KG')
+                if (total_CYL50KG_createdCylinder.success) {
+                    returnData.createdCylinder.total_CYL50KG = total_CYL50KG_createdCylinder.count
+                }
+
+                // Thống kê số bình xuất (xuất vỏ + xuất hàng)
+                const total_CYL50KG_outCylinder = await _countTotalActionCylinderByType(target, 'OUT_CYLINDER', startDate, endDate, 'CYL50KG')
+                if (total_CYL50KG_outCylinder.success) {
+                    returnData.outCylinder.total_CYL50KG = total_CYL50KG_outCylinder.count
+                }
+
+                // Thống kê số bình hồi lưu
+                const total_CYL50KG_turnbackCylinder = await _countTotalActionCylinderByType(target, 'TURN_BACK_CYLINDER', startDate, endDate, 'CYL50KG')
+                if (total_CYL50KG_turnbackCylinder.success) {
+                    returnData.turnbackCylinder.total_CYL50KG = total_CYL50KG_turnbackCylinder.count
+                }
+
+                // Thống kê số bình tồn kho (IN - OUT)
+                const total_CYL50KG_inventoryCylinder = await _countTotalCylinderInWarehouseByType(target, endDate, 'CYL50KG')
+                if (total_CYL50KG_inventoryCylinder.success) {
+                    returnData.inventoryCylinder.total_CYL50KG = total_CYL50KG_inventoryCylinder.count
+                }
+
+                return res.json({
+                    status: true,
+                    resCode: 'SUCCESS-00014',
+                    data: returnData,
+                    message: 'Lấy thông tin thống kê thành công'
+                })
+            }
+
+            // --- TH2: Thống kê số liệu của các đơn vị con
+            if (statisticalType === 'byItsChildren') {
+
+                // Tìm các đơn vị con
+                const childs = await User.find({
+                    isChildOf: userInfor.id,
+                    userType: { in: ['Factory', 'General', 'Agency'] },
+                    userRole: { in: ['SuperAdmin', 'Owner'] },
+                })
+
+                if (childs.length > 0) {
+                    await Promise.all(childs.map(async child => {
+                        // Thống kê số bình đã tạo
+                        const total_createdCylinder = await _countTotalActionCylinder(child.id, 'CREATED_CYLINDER', startDate, endDate)
+                        if (total_createdCylinder.success) {
+                            returnData.createdCylinder.total += total_createdCylinder.count
+                        }
+
+                        // Thống kê số bình xuất (xuất vỏ + xuất hàng)
+                        const total_outCylinder = await _countTotalActionCylinder(child.id, 'OUT_CYLINDER', startDate, endDate)
+                        if (total_outCylinder.success) {
+                            returnData.outCylinder.total += total_outCylinder.count
+                        }
+
+                        // Thống kê số bình hồi lưu
+                        const total_turnbackCylinder = await _countTotalActionCylinder(child.id, 'TURN_BACK_CYLINDER', startDate, endDate)
+                        if (total_turnbackCylinder.success) {
+                            returnData.turnbackCylinder.total += total_turnbackCylinder.count
+                        }
+
+                        // Thống kê số bình tồn kho (IN - OUT)
+                        const total_inventoryCylinder = await _countTotalCylinderInWarehouse(child.id, endDate)
+                        if (total_inventoryCylinder.success) {
+                            returnData.inventoryCylinder.total += total_inventoryCylinder.count
+                        }
+
+                        // ===  ===  ===  Loại CYL12KG  ===  ===  ===
+                        // Thống kê số bình đã tạo
+                        const total_CYL12KG_createdCylinder = await _countTotalActionCylinderByType(child.id, 'CREATED_CYLINDER', startDate, endDate, 'CYL12KG')
+                        if (total_CYL12KG_createdCylinder.success) {
+                            returnData.createdCylinder.total_CYL12KG += total_CYL12KG_createdCylinder.count
+                        }
+
+                        // Thống kê số bình xuất (xuất vỏ + xuất hàng)
+                        const total_CYL12KG_outCylinder = await _countTotalActionCylinderByType(child.id, 'OUT_CYLINDER', startDate, endDate, 'CYL12KG')
+                        if (total_CYL12KG_outCylinder.success) {
+                            returnData.outCylinder.total_CYL12KG += total_CYL12KG_outCylinder.count
+                        }
+
+                        // Thống kê số bình hồi lưu
+                        const total_CYL12KG_turnbackCylinder = await _countTotalActionCylinderByType(child.id, 'TURN_BACK_CYLINDER', startDate, endDate, 'CYL12KG')
+                        if (total_CYL12KG_turnbackCylinder.success) {
+                            returnData.turnbackCylinder.total_CYL12KG += total_CYL12KG_turnbackCylinder.count
+                        }
+
+                        // Thống kê số bình tồn kho (IN - OUT)
+                        const total_CYL12KG_inventoryCylinder = await _countTotalCylinderInWarehouseByType(child.id, endDate, 'CYL12KG')
+                        if (total_CYL12KG_inventoryCylinder.success) {
+                            returnData.inventoryCylinder.total_CYL12KG += total_CYL12KG_inventoryCylinder.count
+                        }
+
+                        // ===  ===  ===  Loại CYL12KGCO  ===  ===  ===
+                        // Thống kê số bình đã tạo
+                        const total_CYL12KGCO_createdCylinder = await _countTotalActionCylinderByType(child.id, 'CREATED_CYLINDER', startDate, endDate, 'CYL12KGCO')
+                        if (total_CYL12KGCO_createdCylinder.success) {
+                            returnData.createdCylinder.total_CYL12KGCO += total_CYL12KGCO_createdCylinder.count
+                        }
+
+                        // Thống kê số bình xuất (xuất vỏ + xuất hàng)
+                        const total_CYL12KGCO_outCylinder = await _countTotalActionCylinderByType(child.id, 'OUT_CYLINDER', startDate, endDate, 'CYL12KGCO')
+                        if (total_CYL12KGCO_outCylinder.success) {
+                            returnData.outCylinder.total_CYL12KGCO += total_CYL12KGCO_outCylinder.count
+                        }
+
+                        // Thống kê số bình hồi lưu
+                        const total_CYL12KGCO_turnbackCylinder = await _countTotalActionCylinderByType(child.id, 'TURN_BACK_CYLINDER', startDate, endDate, 'CYL12KGCO')
+                        if (total_CYL12KGCO_turnbackCylinder.success) {
+                            returnData.turnbackCylinder.total_CYL12KGCO += total_CYL12KGCO_turnbackCylinder.count
+                        }
+
+                        // Thống kê số bình tồn kho (IN - OUT)
+                        const total_CYL12KGCO_inventoryCylinder = await _countTotalCylinderInWarehouseByType(child.id, endDate, 'CYL12KGCO')
+                        if (total_CYL12KGCO_inventoryCylinder.success) {
+                            returnData.inventoryCylinder.total_CYL12KGCO += total_CYL12KGCO_inventoryCylinder.count
+                        }
+
+                        // ===  ===  ===  Loại CYL45KG  ===  ===  ===
+                        // Thống kê số bình đã tạo
+                        const total_CYL45KG_createdCylinder = await _countTotalActionCylinderByType(child.id, 'CREATED_CYLINDER', startDate, endDate, 'CYL45KG')
+                        if (total_CYL45KG_createdCylinder.success) {
+                            returnData.createdCylinder.total_CYL45KG += total_CYL45KG_createdCylinder.count
+                        }
+
+                        // Thống kê số bình xuất (xuất vỏ + xuất hàng)
+                        const total_CYL45KG_outCylinder = await _countTotalActionCylinderByType(child.id, 'OUT_CYLINDER', startDate, endDate, 'CYL45KG')
+                        if (total_CYL45KG_outCylinder.success) {
+                            returnData.outCylinder.total_CYL45KG += total_CYL45KG_outCylinder.count
+                        }
+
+                        // Thống kê số bình hồi lưu
+                        const total_CYL45KG_turnbackCylinder = await _countTotalActionCylinderByType(child.id, 'TURN_BACK_CYLINDER', startDate, endDate, 'CYL45KG')
+                        if (total_CYL45KG_turnbackCylinder.success) {
+                            returnData.turnbackCylinder.total_CYL45KG += total_CYL45KG_turnbackCylinder.count
+                        }
+
+                        // Thống kê số bình tồn kho (IN - OUT)
+                        const total_CYL45KG_inventoryCylinder = await _countTotalCylinderInWarehouseByType(child.id, endDate, 'CYL45KG')
+                        if (total_CYL45KG_inventoryCylinder.success) {
+                            returnData.inventoryCylinder.total_CYL45KG += total_CYL45KG_inventoryCylinder.count
+                        }
+
+                        // ===  ===  ===  Loại CYL50KG  ===  ===  ===
+                        // Thống kê số bình đã tạo
+                        const total_CYL50KG_createdCylinder = await _countTotalActionCylinderByType(child.id, 'CREATED_CYLINDER', startDate, endDate, 'CYL50KG')
+                        if (total_CYL50KG_createdCylinder.success) {
+                            returnData.createdCylinder.total_CYL50KG += total_CYL50KG_createdCylinder.count
+                        }
+
+                        // Thống kê số bình xuất (xuất vỏ + xuất hàng)
+                        const total_CYL50KG_outCylinder = await _countTotalActionCylinderByType(child.id, 'OUT_CYLINDER', startDate, endDate, 'CYL50KG')
+                        if (total_CYL50KG_outCylinder.success) {
+                            returnData.outCylinder.total_CYL50KG += total_CYL50KG_outCylinder.count
+                        }
+
+                        // Thống kê số bình hồi lưu
+                        const total_CYL50KG_turnbackCylinder = await _countTotalActionCylinderByType(child.id, 'TURN_BACK_CYLINDER', startDate, endDate, 'CYL50KG')
+                        if (total_CYL50KG_turnbackCylinder.success) {
+                            returnData.turnbackCylinder.total_CYL50KG += total_CYL50KG_turnbackCylinder.count
+                        }
+
+                        // Thống kê số bình tồn kho (IN - OUT)
+                        const total_CYL50KG_inventoryCylinder = await _countTotalCylinderInWarehouseByType(child.id, endDate, 'CYL50KG')
+                        if (total_CYL50KG_inventoryCylinder.success) {
+                            returnData.inventoryCylinder.total_CYL50KG += total_CYL50KG_inventoryCylinder.count
+                        }
+                    }))
+
+                    return res.json({
+                        status: true,
+                        resCode: 'SUCCESS-00014',
+                        data: returnData,
+                        message: 'Lấy thông tin thống kê thành công'
+                    })
+                }
+                else {
+                    return res.json({
+                        status: true,
+                        resCode: 'SUCCESS-00014',
+                        data: returnData,
+                        message: 'Lấy thông tin thống kê thành công'
+                    })
+                }
+            }            
+        }
+        catch (error) {
+            return res.json({
+                status: false,
+                resCode: 'CATCH-00003',
+                data: {
+                    error: error.message
+                },
+                message: 'Gặp lỗi khi lấy thông tin thống kê'
+            })
+        }
+    },
+
+    // Test
+    Test: async function (req, res) {
+
+        const {
+            target,
+            action,
+            startDate,
+            endDate,
+            typeCylinder,
+        } = req.body
+
+        let count = 00
+
+        if (!typeCylinder) {
+            count = await _countTotalActionCylinder(
+                target,
+                action,
+                new Date(startDate).toISOString(),
+                new Date(endDate).toISOString(),
+            )
+        }
+        else {
+            count = await _countTotalActionCylinderByType(
+                target,
+                action,
+                new Date(startDate).toISOString(),
+                new Date(endDate).toISOString(),
+                typeCylinder
+            )
+        }
+
+
+
+        console.log(count)
+        return res.json({ data: count })
+    }
+};
+
+/**
+     * Tìm tổng số bình theo Action
+     * @param target
+     * @param action
+     * @param startDate
+     * @param endDate
+     * @returns {*}
+     */
+_countTotalActionCylinder = async function (target, action, startDate, endDate) {
+    let returnData = {
+        success: false,
+        count: 0,
+        message: ''
+    }
+
+    try {
+        let criteria = {
+            objectId: target,
+            createdAt: { '>=': startDate, '<=': endDate }
+        }
+
+        switch (action) {
+            // Tổng số bình đã tạo
+            case 'CREATED_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                    flow: 'CREATE',
+                }, criteria);
+                break;
+            // Tổng số lần nhập bình (khai báo + nhập vỏ + nhập hàng)
+            case 'IN_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                }, criteria);
+                break;
+            // Tổng số lần xuất bình (xuất hàng + xuất vỏ)
+            case 'OUT_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'OUT',
+                }, criteria);
+                break;
+            // Tổng số lần xuất hàng
+            case 'EXPORT_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'OUT',
+                    flow: 'EXPORT',
+                }, criteria);
+                break;
+            // Tổng số lần nhập hàng
+            case 'IMPORT_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                    flow: 'IMPORT',
+                }, criteria);
+                break;
+            // Tổng số lần xuất vỏ
+            case 'EXPORT_CELL_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'OUT',
+                    flow: 'EXPORT_CELL',
+                }, criteria);
+                break;
+            // Tổng số lần nhập vỏ
+            case 'IMPORT_CELL_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                    flow: 'IMPORT_CELL',
+                }, criteria);
+                break;
+            // Tổng số lần bán bình cho người dân
+            case 'SALE_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'OUT',
+                    flow: 'SALE',
+                }, criteria);
+                break;
+            // Tổng số lần hồi lưu bình
+            case 'TURN_BACK_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                    flow: 'TURN_BACK',
+                }, criteria);
+                break;
+            default:
+                break;
+        }
+
+        const numberCylinder = await CylinderImex.count(criteria)
+
+        returnData.success = true
+        returnData.count = numberCylinder
+        returnData.message = 'Thành công'
+
+        return returnData
+    }
+    catch (error) {
+        return {
+            success: false,
+            count: 0,
+            message: error.message
+        }
+    }
+};
+
+/**
+     * Tìm tổng số bình [Action] theo loại
+     * @param target
+     * @param action
+     * @param startDate
+     * @param endDate
+     * @param typeCylinder
+     * @returns {*}
+     */
+_countTotalActionCylinderByType = async function (target, action, startDate, endDate, typeCylinder) {
+    let returnData = {
+        success: false,
+        count: 0,
+        message: ''
+    }
+
+    try {
+        let criteria = {
+            objectId: target,
+            createdAt: { '>=': startDate, '<=': endDate }
+        }
+
+        switch (action) {
+            // Tổng số bình đã tạo
+            case 'CREATED_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                    flow: 'CREATE',
+                }, criteria);
+                break;
+            // Tổng số lần nhập bình (khai báo + nhập vỏ + nhập hàng)
+            case 'IN_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                }, criteria);
+                break;
+            // Tổng số lần xuất bình (xuất hàng + xuất vỏ)
+            case 'OUT_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'OUT',
+                }, criteria);
+                break;
+            // Tổng số lần xuất hàng
+            case 'EXPORT_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'OUT',
+                    flow: 'EXPORT',
+                }, criteria);
+                break;
+            // Tổng số lần nhập hàng
+            case 'IMPORT_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                    flow: 'IMPORT',
+                }, criteria);
+                break;
+            // Tổng số lần xuất vỏ
+            case 'EXPORT_CELL_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'OUT',
+                    flow: 'EXPORT_CELL',
+                }, criteria);
+                break;
+            // Tổng số lần nhập vỏ
+            case 'IMPORT_CELL_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                    flow: 'IMPORT_CELL',
+                }, criteria);
+                break;
+            // Tổng số lần bán bình cho người dân
+            case 'SALE_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'OUT',
+                    flow: 'SALE',
+                }, criteria);
+                break;
+            // Tổng số lần hồi lưu bình
+            case 'TURN_BACK_CYLINDER':
+                criteria = Object.assign({
+                    typeImex: 'IN',
+                    flow: 'TURN_BACK',
+                }, criteria);
+                break;
+            default:
+                break;
+        }
+
+        // Tìm danh sách bình với action tương ứng
+        const records = await CylinderImex.find(criteria).populate('cylinder')
+
+        // Lọc và đếm danh sách bình theo loại
+        let count = 0
+        await Promise.all(records.map(record => {
+            if (record.cylinder.cylinderType === typeCylinder) {
+                count++
+            }
+        }))
+
+        returnData.success = true
+        returnData.count = count
+        returnData.message = 'Thành công'
+
+        return returnData
+    }
+    catch (error) {
+        return {
+            success: false,
+            count: 0,
+            message: error.message
+        }
+    }
+};
+
+/**
+     * Tìm tổng số bình trong kho
+     * @param target
+     * @param endDate
+     * @returns {*}
+     */
+_countTotalCylinderInWarehouse = async function (target, endDate) {
+    let returnData = {
+        success: false,
+        count: 0,
+        message: ''
+    }
+
+    try {
+        // "1970-01-01T00:00:00.000Z"
+        const startDate = new Date(0).toISOString()
+
+        const totalIN = await _countTotalActionCylinder(target, 'IN_CYLINDER', startDate, endDate)
+        const totalOUT = await _countTotalActionCylinder(target, 'OUT_CYLINDER', startDate, endDate)
+
+        const numberCylinder = totalIN.count - totalOUT.count
+
+        returnData.success = true
+        returnData.count = numberCylinder
+        returnData.message = 'Thành công'
+
+        return returnData
+    }
+    catch (error) {
+        return {
+            success: false,
+            count: 0,
+            message: error.message
+        }
+    }
+};
+
+/**
+     * Tìm tổng số bình trong kho theo loại
+     * @param target
+     * @param endDate
+     * @param typeCylinder
+     * @returns {*}
+     */
+_countTotalCylinderInWarehouseByType = async function (target, endDate, typeCylinder) {
+    let returnData = {
+        success: false,
+        count: 0,
+        message: ''
+    }
+
+    try {
+        // "1970-01-01T00:00:00.000Z"
+        const startDate = new Date(0).toISOString()
+
+        const totalIN = await _countTotalActionCylinderByType(target, 'IN_CYLINDER', startDate, endDate, typeCylinder)
+        const totalOUT = await _countTotalActionCylinderByType(target, 'OUT_CYLINDER', startDate, endDate, typeCylinder)
+
+        const numberCylinder = totalIN.count - totalOUT.count
+
+        returnData.success = true
+        returnData.count = numberCylinder
+        returnData.message = 'Thành công'
+
+        return returnData
+    }
+    catch (error) {
+        return {
+            success: false,
+            count: 0,
+            message: error.message
+        }
+    }
+};

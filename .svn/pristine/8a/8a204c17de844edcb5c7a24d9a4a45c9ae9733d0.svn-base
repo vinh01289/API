@@ -1,0 +1,53 @@
+/**
+ * Policy Mappings
+ * (sails.config.policies)
+ *
+ * Policies are simple functions which run **before** your actions.
+ *
+ * For more information on configuring policies, check out:
+ * https://sailsjs.com/docs/concepts/policies
+ */
+
+module.exports.policies = {
+
+	/***************************************************************************
+	 *                                                                          *
+	 * Default policy for all controllers and actions, unless overridden.       *
+	 * (`true` allows public access)                                            *
+	 *                                                                          *
+	 ***************************************************************************/
+
+	// '*': true,
+	'*': ['jwtAuth'],
+
+	'UserController': {
+		'find': ['jwtAuth', 'permissionRoles'],
+		'create': true,
+		'login': true,
+		'forgotPassword': true,
+		'resetPasswordByResetToken': true,
+		//'changePassword' : true,
+		'updateBrandInformation': true,
+		'updateInformationUser': true,
+		'updateReturnGas' : true,
+		'getListReturnGas' : true,
+		'getAvatar' : true,
+		'getDriver' : true,
+		//'uploadFile': true
+		
+	},
+	'returnGasController':{
+		'returnGas': true
+	},
+	/*'CylinderController': {
+		/!*'find': ['permissionRoles']*!/
+	},*/
+	'ReportController': {
+		'create': true
+	},
+
+	'ManufactureController': {
+		'find': true
+	}
+
+};

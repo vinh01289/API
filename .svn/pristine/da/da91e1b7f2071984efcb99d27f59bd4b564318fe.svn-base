@@ -1,0 +1,37 @@
+/**
+ * CustomerController
+ *
+ * @description :: Server-side actions for handling incoming requests.
+ * @help        :: See https://sailsjs.com/docs/concepts/actions
+ */
+
+module.exports = {
+  createInfo: async function (req, res) {
+    if (!req.body) {
+        return res.badRequest(Utils.jsonErr('Empty body'));
+    } 
+    
+    try {
+        const info = {
+            name: req.body.name.trim(),
+            phone: req.body.phone.trim(),
+            address: req.body.address.trim(),
+            lat: req.body.lat,
+            long: req.body.long,
+        };
+
+        const newInfo = await Customer.create(info).fetch();
+
+        return res.json({
+            success: true,
+            customerInfo: newInfo
+        });
+    } catch (error) {
+        return res.json({
+            success: false,
+            message: error.message
+        });
+    }
+  },
+};
+

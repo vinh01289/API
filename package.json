@@ -1,0 +1,61 @@
+{
+  "name": "gas-tracking-api",
+  "private": true,
+  "version": "0.0.0",
+  "description": "a Sails application",
+  "keywords": [],
+  "dependencies": {
+    "@sailshq/connect-redis": "^3.2.1",
+    "@sailshq/lodash": "^3.10.3",
+    "@sailshq/socket.io-redis": "^5.2.0",
+    "async": "2.0.1",
+    "bcrypt": "^2.0.0",
+    "body-parser": "^1.18.3",
+    "convert-excel-to-json": "^1.5.2",
+    "express": "^4.17.1",
+    "farmhash": "^2.0.4",
+    "grunt": "^1.0.3",
+    "include-all": "^4.0.3",
+    "json2xls": "^0.1.2",
+    "jsonwebtoken": "^8.1.0",
+    "mailgun-js": "^0.17.0",
+    "moment": "^2.19.3",
+    "mongoose": "^5.10.5",
+    "mongoose-int32": "^0.4.1",
+    "multer": "1.1.0",
+    "node-excel-export": "^1.4.4",
+    "password-validator": "^4.0.0",
+    "rc": "^1.2.2",
+    "sails": "^1.0.2",
+    "sails-hook-grunt": "^3.0.2",
+    "sails-hook-orm": "^2.0.0-16",
+    "sails-hook-sockets": "^1.4.0",
+    "shortid": "^2.2.8",
+    "validator": "^9.1.2",
+    "xls-to-json-lc": "~0.3.4",
+    "xlsx": "^0.14.0",
+    "xlsx-to-json-lc": "~0.5.0"
+  },
+  "devDependencies": {
+    "@sailshq/eslint": "^4.19.3",
+    "sails-mongo": "^1.0.1",
+    "webpack": "^4.42.0",
+    "webpack-cli": "^3.3.11"
+  },
+  "scripts": {
+    "start": "NODE_ENV=production node app.js",
+    "test": "npm run lint && npm run custom-tests && echo 'Done.'",
+    "lint": "eslint . --max-warnings=0 --report-unused-disable-directives && echo '✔  Your .js files look good.'",
+    "custom-tests": "echo \"(No other custom tests yet.)\" && echo"
+  },
+  "main": "app.js",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/dannytran/gas-tracking-api.git"
+  },
+  "author": "dannytran",
+  "license": "",
+  "engines": {
+    "node": ">=10.1"
+  }
+}

@@ -1,0 +1,206 @@
+/**
+ * CategoryCylinderController
+ *
+ * @description :: Server-side actions for handling incoming requests.
+ * @help        :: See https://sailsjs.com/docs/concepts/actions
+ */
+
+const USER_TYPE = require('../constants/UserTypes');
+const USER_ROLE = require('../constants/UserRoles');
+
+module.exports = {
+
+    create: async function (req, res) {
+        if (!req.body) {
+            return res.badRequest(Utils.jsonErr('Empty body'));
+        }
+
+        const {
+            code,
+            name,
+            userId,
+        } = req.body
+
+        if (!code) {
+          return res.badRequest(Utils.jsonErr('Code is required'));
+        }
+
+        if (!name) {
+            return res.badRequest(Utils.jsonErr('Name is required'));
+        }
+
+        if (!userId) {
+            return res.badRequest(Utils.jsonErr('UserId is required'));
+        }
+
+        // if (typeof weight !== 'number') {
+        //     return res.badRequest(Utils.jsonErr('Weight phải là kiểu number'));
+        // }
+
+        try {
+            const userInfor = await User.findOne({id: userId})
+            if (!userInfor) {
+                return res.json({
+                    status: false,
+                    resCode: 'ERROR-00001',
+                    data: {},
+                    message: 'Không tìm thấy thông tin người dùng trong hệ thống'
+                })
+            }
+
+            const isExistCategory = await CategoryCylinder.findOne({code : code, isDeleted: false})
+            if (isExistCategory) {
+                return res.json({
+                    status: false,
+                    resCode: 'ERROR-00002',
+                    data: {},
+                    message: 'Trùng mã loại bình'
+                })
+            }
+
+            const categoryCylinder = await CategoryCylinder.create({
+                code: code,
+                name: name,                
+                createdBy: userInfor.id
+            }).fetch();
+
+            if (!categoryCylinder) {
+                return res.json({
+                    status: false,
+                    resCode: 'ERROR-00003',
+                    data: {},
+                    message: 'Tạo loại bình mới thất bại'
+                })
+            }
+            else {
+                return res.json({
+                    status: true,
+                    resCode: 'SUCCESS-00001',
+                    data: categoryCylinder,
+                    message: 'Tạo danh mục bình mới thành công',                    
+                })
+            }
+
+        }
+        catch(error) {
+            return res.json({
+                status: false,
+                resCode: 'CATCH-00001',
+                data: {
+                    error: error.message
+                },
+                message: 'Gặp lỗi khi tạo danh mục loại bình'
+            })
+        }        
+    },
+
+    list: async function (req, res) {
+        const {
+            id
+        } = req.query
+
+        if (!id) {
+            return res.badRequest(Utils.jsonErr('Id is required'));
+        }
+
+        try {     
+            
+            const parent = await getRootParent(id)
+            
+            const categoryCylinder = await CategoryCylinder.find({
+                createdBy: parent,
+                isDeleted: false
+            })
+            return res.ok({
+                status: true,
+                resCode: 'SUCCESS-00002',
+                data: categoryCylinder,
+                message: 'Lấy danh mục loại bình thành công',                    
+            });
+        } catch (error) {
+            return res.badRequest({
+                status: false,
+                resCode: 'CATCH-00002',
+                data: {
+                    error: error.message
+                },
+                message: 'Gặp lỗi khi lấy danh mục loại bình'
+            });
+        }
+    },
+
+    // Lấy danh sách loại bình
+    // Cho in đồng bộ với GEO
+    listCategories: async function (req, res) {
+        if (Object.keys(req.query).length === 0) {
+            return res.badRequest(Utils.jsonErr('Empty body'));
+        }
+
+        const {
+            email
+        } = req.query
+
+        if (!email) return res.badRequest(Utils.jsonErr('Missing email'));
+
+        try {     
+            const userInfo = await User.findOne({ email: email })
+            if (!userInfo) {
+                return res.badRequest(Utils.jsonErr('User not found'));
+            } 
+
+            const parent = await getRootParent(userInfo.id)
+            
+            const categoryCylinder = await CategoryCylinder.find({
+                createdBy: parent,
+                isDeleted: false
+            })
+            
+            if (categoryCylinder.length > 0) {
+                let returnData = []
+                categoryCylinder.forEach(category => {
+                    returnData.push({
+                        id: category.id,
+                        code: category.code,
+                        name: category.name,
+                    })
+                });
+
+                return res.json({
+                    status: true,
+                    data: returnData,
+                    message: "Tìm thấy danh sách loại bình"
+                });
+            }
+            else {
+                return res.json({
+                    status: false,
+                    data: [],
+                    message: "Không tìm thấy loại bình nào"
+                });
+            }
+        } catch (error) {
+            return res.json({
+                status: false,
+                data: [],
+                message: 'Gặp lỗi khi lấy danh mục loại bình'
+            });
+        }
+    },
+
+};
+
+// *************** Function to get root Parent of user tree
+async function getRootParent(parentId) {
+    try {
+      if (parentId === null || typeof parentId === 'undefined' || parentId === '') { return ''; }
+      let parent = await User.findOne({ id: parentId });
+      if (!parent) { return ''; }
+      if (parent.userType === USER_TYPE.Factory && parent.userRole === USER_ROLE.SUPER_ADMIN) { return parent.id; }
+      return await getRootParent(parent.isChildOf);
+    }
+    catch(error) {
+      console.log(error.message)
+    }
+    
+  }
+

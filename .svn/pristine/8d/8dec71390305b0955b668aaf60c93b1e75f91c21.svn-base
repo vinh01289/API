@@ -1,0 +1,138 @@
+/**
+ * Route Mappings
+ * (sails.config.routes)
+ *
+ * Your routes tell Sails what to do each time it receives a request.
+ *
+ * For more information on configuring custom routes, check out:
+ * https://sailsjs.com/anatomy/config/routes-js
+ */
+module.exports.routes = {
+
+
+  //  ╦ ╦╔═╗╔╗ ╔═╗╔═╗╔═╗╔═╗╔═╗
+  //  ║║║║╣ ╠╩╗╠═╝╠═╣║ ╦║╣ ╚═╗
+  //  ╚╩╝╚═╝╚═╝╩  ╩ ╩╚═╝╚═╝╚═╝
+
+  /***************************************************************************
+     *                                                                          *
+     * Make the view located at `views/homepage.ejs` your home page.            *
+     *                                                                          *
+     * (Alternatively, remove this and add an `index.html` file in your         *
+     * `assets` directory)                                                      *
+     *                                                                          *
+     ***************************************************************************/
+
+  '/': {
+    view: 'pages/homepage'
+  },
+
+  /***************************************************************************
+     *                                                                          *
+     * More custom routes here...                                               *
+     * (See https://sailsjs.com/config/routes for examples.)                    *
+     *                                                                          *
+     * If a request to a URL doesn't match any of the routes in this file, it   *
+     * is matched against "shadow routes" (e.g. blueprint routes).  If it does  *
+     * not match any of those, it is matched against static assets.             *
+     *                                                                          *
+     ***************************************************************************/
+
+
+  //  ╔═╗╔═╗╦  ╔═╗╔╗╔╔╦╗╔═╗╔═╗╦╔╗╔╔╦╗╔═╗
+  //  ╠═╣╠═╝║  ║╣ ║║║ ║║╠═╝║ ║║║║║ ║ ╚═╗
+  //  ╩ ╩╩  ╩  ╚═╝╝╚╝═╩╝╩  ╚═╝╩╝╚╝ ╩ ╚═╝
+
+
+  //  ╦ ╦╔═╗╔╗ ╦ ╦╔═╗╔═╗╦╔═╔═╗
+  //  ║║║║╣ ╠╩╗╠═╣║ ║║ ║╠╩╗╚═╗
+  //  ╚╩╝╚═╝╚═╝╩ ╩╚═╝╚═╝╩ ╩╚═╝
+
+
+  //  ╔╦╗╦╔═╗╔═╗
+  //  ║║║║╚═╗║
+  //  ╩ ╩╩╚═╝╚═╝
+  
+  // User Controler
+  '/me': 'UserController.me',
+  'GET /user/info': 'UserController.info',
+  'POST /user/addUser': 'UserController.addUser',
+
+  // Cuong
+  '/user/forgot': 'UserController.forgotPassword',
+  '/user/reset_password': 'UserController.resetPasswordByResetToken',
+  'POST /user/change_password': 'UserController.changePassword',
+
+  'GET /user/getDestination': 'UserController.getDestination',
+  'GET /user/getAllFactory': 'UserController.getAllFactory',
+  'GET /user/getReportChilds': 'UserController.getReportChilds',
+  'POST /user/updateChild': 'UserController.updateChild',
+
+  // hieu
+  'POST /user/updateBrandInformation': 'UserController.updateBrandInformation',
+  //'POST /user/uploadFile' : 'UserController.uploadFile',
+  'POST /user/updateInformationUser': 'UserController.updateInformationUser',
+  'POST /returnGas': 'UserController.returnGasS',
+  'POST /updateReturnGas': 'UserController.updateReturnGas',
+  'GET /getListReturnGas': 'UserController.getListReturnGas',
+  'POST /getBrandInformation': 'UserController.getBrandInformation',
+  
+  'POST /user/getAvatar': 'UserController.getAvatar',
+  'POST /user/getDriver': 'UserController.getDriver',
+  'POST /user/listNameDriver': 'UserController.listNameDriver',
+  'POST /user/getSignature' : 'UserController.getSignature',
+
+  // Cylinder Controllers
+  /*'/cylinder': 'CylinderController.index',*/
+  'POST /cylinder/import': 'CylinderController.import',
+  'POST /cylinder/update_place_status': 'CylinderController.upPlaceStatus',
+  'POST /cylinder/create': 'CylinderController.create',
+  'POST /cylinder/getInfomation': 'CylinderController.getInfomation',
+  'POST /cylinder/updateCylinder': 'CylinderController.updateCylinder',
+  'GET /cylinder/searchCylinder': 'CylinderController.searchCylinder',
+  'POST /cylinder/updateVerifiedDates': 'CylinderController.updateVerifiedDates',
+  
+
+  // History Controllers
+  'POST /history/importCylinder': 'HistoryController.importCylinder',
+  'GET /history/sortHistoryImport': 'HistoryController.sortHistoryImport',
+  'GET /history/sortHistoryExport': 'HistoryController.sortHistoryExport',
+  'GET /history/sortHistoryImport10': 'HistoryController.sortHistoryImport10',
+  'GET /history/sortHistoryExport10': 'HistoryController.sortHistoryExport10',
+  
+
+  // Manufature Controllers
+  'POST /manufacture/create': 'ManufatureController.create',
+  'GET /manufacture/find': 'ManufatureController.find',
+  'GET /manufacture/list': 'ManufatureController.list',
+
+  //Report Controllers
+  'POST /report/reportCylinder': 'ReportController.reportCylinder',
+  'GET /report/getCustomers': 'ReportController.getCustomers',
+  'POST /report/getCustomerReport' : 'ReportController.getCustomerReport',
+  'POST /report/getReportFilters': 'ReportController.getReportFilters',
+  'POST /report/reportChartData': 'ReportController.reportChartData',
+  'GET /report/getInventoryInfo': 'ReportController.getInventoryInfo',
+  'POST /report/getTurnBackCylinders': 'ReportController.getTurnBackCylinders',
+  'POST /report/getTurnBackInfo': 'ReportController.getTurnBackInfo',
+  'POST /report/getChildAndNumberImportByDateTime:': 'ReportController.getChildAndNumberImportByDateTime',
+  'GET /report/getCylinderHistoryExcels': 'ReportController.getCylinderExcels',
+  'POST /report/getReportExcels': 'ReportController.getReportExcels',
+
+  // hieu
+ // 'POST /report/checkInventory': 'ReportController.checkInventory',
+  'POST /report/getListChild': 'ReportController.getListChild',
+  
+
+  //Price History
+  'GET /priceHistory': 'PriceHistoryController.getHistoryPrice',
+
+  //Partner Controller
+  'POST /partner/relationship': 'PartnerController.createRelationship',
+  'GET /partner/relationship': 'PartnerController.getListRelationship',
+  'GET /partner/getFixersRelationship': 'PartnerController.getAllFixerInRelationship',
+
+  //ExportPlace Controller
+  //'/exportPlace': 'ExportPlaceController'
+
+};

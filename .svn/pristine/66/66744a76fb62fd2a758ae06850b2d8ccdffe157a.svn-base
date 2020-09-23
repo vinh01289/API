@@ -1,0 +1,338 @@
+const PlaceStatus = require('../constants/PlaceStatus');
+const UserTypes = require('../constants/UserTypes');
+const excelToJson = require('convert-excel-to-json');
+
+module.exports = {
+  /**
+     * Parse excel to cylinder json list
+     * @param files
+     * @returns {Promise}
+     */
+  excelToCylinder: async function (files,ownerId, fixerId, companyId, classification, manufacture) {
+    //console.log(files);
+    const excel = files[0];
+    let result = {
+      body: [],
+      err:'non of error',
+      status: false
+    };
+
+    const cylinders = excelToJson({
+      sourceFile: excel.fd,
+      header: {
+        rows: 1
+      },
+      // columnToKey: {
+      //   A: 'serial',
+      //   B: 'img_url',
+      //   C: 'color',
+      //   D: 'checkedDate',
+      //   E: 'weight',
+      //   F: 'placeStatus',
+      //   G: 'status',
+      //   H: 'circleCount',
+      //   I: 'currentImportPrice',
+      //   J: 'manufacture'
+      // }
+      columnToKey: {
+        A: 'serial',        
+        B: 'color',
+        C: 'valve',
+        //E: 'classification',
+        D: 'checkedDate',
+        E: 'weight',        
+        F: 'manufacture'
+      }
+    });
+    //return Cylinder.createEach(cylinders.Sheet1).fetch();
+    let body = [];
+    let errorLogs = [];
+    const datas = cylinders.Sheet1;
+    // console.log('REMOVE EXCEL::::', datas);
+    if(datas.length > 0) {
+      for(let i = 0; i < datas.length; i++){
+        createdData = await createEach(datas[i], i+2, ownerId, fixerId, companyId, classification, manufacture);
+        if(!createdData.status) {
+          errorLogs.push(createdData.err);
+          //break;
+        } else {
+          //console.log('Created data::::', createdData);
+          body.push(createdData.data);
+        }
+      }
+    } else {
+      result.err = 'Data import is empty';
+      result.status = false;
+    }
+
+    if(body.length === datas.length ){
+      result.status = true;
+      result.body = body;
+
+    }
+
+    if(errorLogs.length > 0) {
+      result.err = errorLogs.join(';');
+    }
+
+    //console.log('RESULT IMPORT::::', result);
+    return result;
+  },
+
+  excelReqToCylinder: async function (files, ownerId, id_ReqTo, classification, manufacture) {
+    //console.log(files);
+    const excel = files[0];
+    let result = {
+      body: [],
+      err:'non of error',
+      status: false
+    };
+
+    const cylinders = excelToJson({
+      sourceFile: excel.fd,
+      header: {
+        rows: 1
+      },
+      // columnToKey: {
+      //   A: 'serial',
+      //   B: 'img_url',
+      //   C: 'color',
+      //   D: 'checkedDate',
+      //   E: 'weight',
+      //   F: 'placeStatus',
+      //   G: 'status',
+      //   H: 'circleCount',
+      //   I: 'currentImportPrice',
+      //   J: 'manufacture'
+      // }
+      columnToKey: {
+        // A: 'serial',
+        // B: 'img_url',
+        // C: 'color',
+        // D: 'checkedDate',
+        // E: 'weight',
+        // F: 'currentImportPrice',
+        // G: 'manufacture'
+        A: 'serial',        
+        B: 'color',
+        C: 'valve',
+        //E: 'classification',
+        D: 'checkedDate',
+        E: 'weight',        
+        // F: 'manufacture'
+      }
+    });
+    //return Cylinder.createEach(cylinders.Sheet1).fetch();
+    let body = [];
+    let errorLogs = [];
+    const datas = cylinders.Sheet1;
+    // console.log('REMOVE EXCEL::::', datas);
+
+    try {
+      if (datas.length > 0) {
+        const createReq = await ReqImport.create({
+          id_ReqFrom: ownerId,
+          id_ReqTo: id_ReqTo,
+          createdBy: ownerId,
+          status_Req: 'INIT'
+        }).fetch()
+        if (createReq.id) {
+          for (let i = 0; i < datas.length; i++) {
+            createdData = await createEachReqDetail(datas[i], i + 2, ownerId, id_ReqTo, createReq.id, classification, manufacture);
+            if (!createdData.status) {
+              errorLogs.push(createdData.err);
+              //break;
+            } else {
+              //console.log('Created data::::', createdData);
+              body.push(createdData.data);
+            }
+
+            // let createDetailReq = await DetailReqImport.create({
+            //   request: createReq.id,
+            //   serial: datas[i].serial,
+            //   img_url: datas[i].img_url,
+            //   color: datas[i].color,
+            //   checkedDate: datas[i].checkedDate,
+            //   weight: datas[i].weight,
+            //   currentImportPrice: datas[i].currentImportPrice,
+            //   manufacture: datas[i].manufacture
+            // }).fetch()
+
+            // if (createDetailReq) {
+            //   body.push(createDetailReq)
+            // }
+            // else {
+            //   errorLogs.push(datas[i].serial)
+            // }
+          }
+        }
+
+      } else {
+        result.err = 'Data import is empty';
+        result.status = false;
+      }
+
+      if (body.length === datas.length) {
+        result.status = true;
+        result.body = body;
+
+      }
+
+      if (errorLogs.length > 0) {
+        result.err = errorLogs.join(';');
+      }
+
+      //console.log('RESULT IMPORT::::', result);
+      return result;
+    }
+    catch (err) {
+      result.status = false
+      result.err = err.message
+    }
+    
+  },
+
+  /**
+     * Parse excel to cylinder json list
+     * @param cylinder_id
+     * @param user
+     * @returns {Promise}
+     */
+  upPlaceStatus: async function (cylinder_id, user) {
+
+    let cylinder = await Cylinder.findOne({id: cylinder_id});
+    console.log(cylinder_id, cylinder, user);
+    let newPlaceStatus = PlaceStatus.UN_KNOW;
+
+    switch (cylinder.placeStatus) {
+      case PlaceStatus.IN_FACTORY:
+        if (user.userType !== UserTypes.Factory) {return false;}
+        newPlaceStatus = PlaceStatus.DELIVERING;
+        break;
+        // case PlaceStatus.FACTORY2GENERAL:
+        //     if (user.userType !== UserTypes.General) return false;
+        //     newPlaceStatus = PlaceStatus.IN_GENERAL;
+        //     break;
+      case PlaceStatus.IN_GENERAL:
+        if (user.userType !== UserTypes.General) {return false;}
+        newPlaceStatus = PlaceStatus.DELIVERING;
+        break;
+        // case PlaceStatus.GENERAL2AGENCY:
+        //     if (user.userType !== UserTypes.Agency) return false;
+        //     newPlaceStatus = PlaceStatus.IN_AGENCY;
+        //     break;
+      case PlaceStatus.IN_AGENCY:
+        if (user.userType !== UserTypes.Agency) {return false;}
+        newPlaceStatus = PlaceStatus.DELIVERING;
+        break;
+        // case PlaceStatus.AGENCY2CUSTOMER:
+        //     if(user.userType !== UserTypes.Factory) return null;
+        //     break;
+        // case PlaceStatus.IN_CUSTOMER:
+        //     if(user.userType !== UserTypes.Factory) return null;
+        //     break;
+      default:
+        return false;
+    }
+
+    return Cylinder.update({id: cylinder_id}).set({
+      placeStatus: newPlaceStatus
+    }).fetch();
+  }
+};
+
+/**
+ * Action for /cylinder/create
+ * @param req
+ * @param res
+ * @returns {*}
+ */
+async function createEach(data, index,ownerId, fixerId, companyId, classification, manufacture) {
+  let createdData = {
+    status: false,
+    data: {},
+    err: ''
+  };
+  try {
+    const availableManufacture = await Manufacture.findOne({where: {owner: ownerId, id: manufacture}});
+
+    if(!availableManufacture) {
+      createdData.err = `Manufacture ${manufacture} is not available on your system, please check data at line ${index} of excel `;
+      return createdData;
+    }
+
+    const exitsCylinder = await Cylinder.findOne({
+      where: {serial: data.serial, manufacture: manufacture},
+    });
+    if(exitsCylinder) {
+      createdData.err = `The cylinder with serial ${data.serial} with manufacture ${manufacture} already exist, please check data at line ${index} of excel `;
+      return createdData;
+    }
+    if (!companyId) {
+      data.factory = ownerId;
+      data.current = fixerId ? fixerId : ownerId;
+      data.placeStatus = fixerId ? 'IN_REPAIR' : 'IN_FACTORY';
+      data.classification = classification;
+      data.manufacture = manufacture;
+      data.manufacturedBy = fixerId ? fixerId : ownerId;
+    }
+    else {
+      data.factory = ownerId;
+      data.current = companyId;
+      data.placeStatus = 'IN_FACTORY';
+      data.classification = classification;
+      data.manufacture = manufacture;
+      data.manufacturedBy = companyId;
+    }
+    // data.factory = ownerId;
+    // data.current = fixerId ? fixerId : ownerId;
+    // data.placeStatus =  fixerId ? 'IN_REPAIR' : 'IN_FACTORY';
+    const cylinder = await Cylinder.create(data).fetch();
+    //console.log('Created data::::', createdData);
+    createdData.status = true;
+    createdData.data = cylinder;
+    return createdData;
+  } catch (err) {
+    createdData.err = err.message;
+    return false;
+  }
+}
+
+async function createEachReqDetail(data, index,ownerId, id_ReqTo, idRequest, classification, manufacture) {
+  let createdData = {
+    status: false,
+    data:{},
+    err: ''
+  };
+  try {
+    const availableManufacture = await Manufacture.findOne({where: {owner: id_ReqTo, id: manufacture}});
+
+    if(!availableManufacture) {
+      createdData.err = `Manufacture ${manufacture} is not available on your system, please check data at line ${index} of excel `;
+      return createdData;
+    }
+
+    const exitsCylinder = await Cylinder.findOne({
+      where: {serial: data.serial, manufacture: manufacture},
+    });
+    if(exitsCylinder) {
+      createdData.err = `The cylinder with serial ${data.serial} with manufacture ${manufacture} already exist, please check data at line ${index} of excel `;
+      return createdData;
+    }
+    //data.factory = ownerId;
+    //data.current = id_ReqTo ? id_ReqTo : ownerId;
+    //data.placeStatus =  id_ReqTo ? 'IN_REPAIR' : 'IN_FACTORY';
+    data.createdBy = ownerId;
+    data.request = idRequest;
+    data.classification = classification;
+    data.manufacture = manufacture;
+    const reqDetail = await DetailReqImport.create(data).fetch();
+    //console.log('Created data::::', createdData);
+    createdData.status = true;
+    createdData.data = reqDetail;
+    return createdData;
+  } catch (err) {
+    createdData.err = err.message;
+    return createdData;
+  }
+}
