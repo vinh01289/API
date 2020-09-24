@@ -257,45 +257,17 @@ module.exports.routes = {
 
   // Carrier
   'POST /carrier/createCarrier': 'CarrierController.createCarrier',
-  'POST /carrier/getCarrierById': 'CarrierController.getCarrierById',
+  'POST /carrier/getCarrierByCode': 'CarrierController.getCarrierByCode',
   'GET /carrier/getAllCarrier': 'CarrierController.getAllCarrier',
   'POST /carrier/updateCarrier': 'CarrierController.updateCarrier',
   'POST /carrier/cancelCarrier': 'CarrierController.cancelCarrier',
-  'POST /carrier/getCarrierByUserId': 'CarrierController.getCarrierByUserId',
-
 
   // TransInvoice
   'POST /transinvoice/createTransInvoice': 'TransInvoiceController.createTransInvoice',
   'POST /transinvoice/getTransInvoiceById': 'TransInvoiceController.getTransInvoiceById',
-  'GET /transinvoice/getAllTransInvoiceOfCarrier': 'TransInvoiceController.getAllTransInvoiceOfCarrier',
+  'GET /transinvoice/getAllTransInvoice': 'TransInvoiceController.getAllTransInvoice',
   'POST /transinvoice/updateTransInvoice': 'TransInvoiceController.updateTransInvoice',
   'POST /transinvoice/cancelTransInvoice': 'TransInvoiceController.cancelTransInvoice',
-
-  // TransInvoiceDetail
-  'POST /transinvoicedetail/updateTransInvoiceDetail': 'TransInvoiceDetailController.updateTransInvoiceDetail',
-  'POST /transinvoicedetail/getDetailOfTransInvoice': 'TransInvoiceDetailController.getDetailOfTransInvoice',
-  'POST /transinvoicedetail/cancelTransInvoiceDetail': 'TransInvoiceDetailController.cancelTransInvoiceDetail',
-
-  // TransLocationInvoice
-  'POST /translocationinvoice/createTransLocationInvoice': 'TransLocationInvoiceController.createTransLocationInvoice',
-  //'POST /translocationinvoice/getTransLocationInvoiceById': 'TransLocationInvoiceController.getTransLocationInvoiceById',
-  //'GET /translocationinvoice/getAllTransLocationInvoice': 'TransLocationInvoiceController.getAllTransLocationInvoice',
-  //'POST /translocationinvoice/getLocationByOrderGasId': 'TransLocationInvoiceController.getLocationByOrderGasId',
-  'GET /translocationinvoice/getLocationBytransInvoiceDetailId': 'TransLocationInvoiceController.getLocationBytransInvoiceDetailId',
-  
-  //Phu
-  //System User
-  'POST /systemuser/createSystemUser' : 'SystemUserController.createSystemUser',
-  'GET /systemuser/getAllSystemUser' : 'SystemUserController.getAllSystemUser',
-  'POST /systemuser/updateSystemUser' : 'SystemUserController.updateSystemUser',
-  'POST /systemuser/deleteSystemUser' : 'SystemUserController.deleteSystemUser'
-  // CylinderGas
-  // 'POST /cylindergas/searchCylinders': 'CylinderGasController.searchCylinders',
-  // 'POST /cylindergas/create': 'CylinderGasController.create',
-  // 'POST /cylindergas/getInfomation': 'CylinderGasController.getInfomation',
-  // 'POST /cylindergas/updateCylinder': 'CylinderGasController.updateCylinder',
-  // 'GET /cylindergas/searchCylinder': 'CylinderGasController.searchCylinder',
-
 
 
 

@@ -52,15 +52,7 @@ module.exports.routes = {
   //  ╔╦╗╦╔═╗╔═╗
   //  ║║║║╚═╗║
   //  ╩ ╩╩╚═╝╚═╝
-
-
-  //UserType controller
-  '/POST /userType/createUserType': 'UserTypeController.createUserType',
-  'POST /userType/updateUserType': 'UserTypeController.updateUserType',
-  'POST /userType/deleteUserType': 'UserTypeController.deleteUserType',
-  'POST /userType/getAllUserType': 'UserTypeController.getAllUserType',
-  'POST /userType/getUserTypeById': 'UserTypeController.getUserTypeById',
-
+  
   // User Controler
   '/me': 'UserController.me',
   'GET /user/info': 'UserController.info',
@@ -72,7 +64,7 @@ module.exports.routes = {
   '/user/reset_password': 'UserController.resetPasswordByResetToken',
   'POST /user/change_password': 'UserController.changePassword',
   'POST /user/getAllChild': 'UserController.getAllChild',
-
+  
 
   'GET /user/getDestination': 'UserController.getDestination',
   'GET /user/getAllFactory': 'UserController.getAllFactory',
@@ -81,14 +73,14 @@ module.exports.routes = {
   'POST /user/getAllCompanyToFix': 'UserController.getAllCompanyToFix',
   'POST /cylinder/searchCylinders': 'CylinderController.searchCylinders',
   'POST /cylinder/createReqImport': 'CylinderController.createReqImport',
-  'POST /cylinder/getReqImport': 'CylinderController.getReqImport',
+  'POST /cylinder/getReqImport': 'CylinderController.getReqImport',  
   'POST /cylinder/confirmReqImport': 'CylinderController.confirmReqImport',
   'POST /cylinder/removeReqImport': 'CylinderController.removeReqImport',
   'GET /user/getListUserByTpe': 'UserController.getListUserByTpe',
   'POST /cylinder/importCylinders': 'CylinderController.importCylinders',
   'GET /manufacture/listManufactures': 'ManufactureController.listManufactures',
   'GET /category/listCategories': 'CategoryCylinderController.listCategories',
-
+  
   // hieu
   //'POST /user/uploadFile' : 'UserController.uploadFile',
   'POST /user/updateInformationUser': 'UserController.updateInformationUser',
@@ -96,12 +88,12 @@ module.exports.routes = {
   'POST /updateReturnGas': 'UserController.updateReturnGas',
   'GET /getListReturnGas': 'UserController.getListReturnGas',
   'POST /getBrandInformation': 'UserController.getBrandInformation',
-
+  
   'POST /user/getAvatar': 'UserController.getAvatar',
   'POST /user/getDriver': 'UserController.getDriver',
   'POST /user/getDriverImport': 'UserController.getDriverImport',
   'POST /user/listNameDriver': 'UserController.listNameDriver',
-  'POST /user/getSignature': 'UserController.getSignature',
+  'POST /user/getSignature' : 'UserController.getSignature',
 
   // Cylinder Controllers
   /*'/cylinder': 'CylinderController.index',*/
@@ -115,7 +107,7 @@ module.exports.routes = {
   'POST /cylinder/getInfomationExcel': 'CylinderController.getInfomationExcel',
   'POST /cylinder/updateCylinderInformationExcel': 'CylinderController.updateCylinderInformationExcel',
   'POST /cylinder/importFromSubsidiary': 'CylinderController.importFromSubsidiary',
-
+  
 
   // History Controllers
   'POST /history/importCylinder': 'HistoryController.importCylinder',
@@ -124,7 +116,7 @@ module.exports.routes = {
   // 'GET /history/sortHistoryImport10': 'HistoryController.sortHistoryImport10',
   // 'GET /history/sortHistoryExport10': 'HistoryController.sortHistoryExport10',
   'POST /history/importCylinderSkipScanWhenExport': 'HistoryController.importCylinderSkipScanWhenExport',
-
+  
 
   // Manufature Controllers
   'POST /manufacture/create': 'ManufactureController.create',
@@ -132,11 +124,11 @@ module.exports.routes = {
   'GET /manufacture/list': 'ManufactureController.list',
   'POST /manufacture/updateBrandInformation': 'ManufactureController.updateBrandInformation',
   'POST /manufacture/listManufacture': 'ManufactureController.listManufacture',
-
+  
   //Report Controllers
   'POST /report/reportCylinder': 'ReportController.reportCylinder',
   'GET /report/getCustomers': 'ReportController.getCustomers',
-  'POST /report/getCustomerReport': 'ReportController.getCustomerReport',
+  'POST /report/getCustomerReport' : 'ReportController.getCustomerReport',
   'POST /report/getReportFilters': 'ReportController.getReportFilters',
   'POST /report/reportChartData': 'ReportController.reportChartData',
   'GET /report/getInventoryInfo': 'ReportController.getInventoryInfo',
@@ -146,12 +138,12 @@ module.exports.routes = {
   'GET /report/getCylinderHistoryExcels': 'ReportController.getCylinderExcels',
   'POST /report/getReportExcels': 'ReportController.getReportExcels',
   'POST /report/getTopExport': 'ReportController.getTopExport',
-
+  
 
   // hieu
-  // 'POST /report/checkInventory': 'ReportController.checkInventory',
+ // 'POST /report/checkInventory': 'ReportController.checkInventory',
   'POST /report/getListChild': 'ReportController.getListChild',
-
+  
 
   //Price History
   'GET /priceHistory': 'PriceHistoryController.getHistoryPrice',
@@ -166,7 +158,7 @@ module.exports.routes = {
   //'/exportPlace': 'ExportPlaceController'
 
   // Inspector
-  'POST /inspector/checklist': 'ChecklistController.setChecklist',
+  'POST /inspector/checklist': 'ChecklistController.setChecklist',  
   'POST /inspector/setMonthlyChecklist': 'ChecklistController.setMonthlyChecklist',
   'POST /inspector/getInspector': 'UserController.getInspector',
   'POST /inspector/getStaff': 'UserController.getStaff',
@@ -174,15 +166,15 @@ module.exports.routes = {
 
   // 
   'POST /schedule/createSchedule': 'InspectionScheduleController.createSchedule',
-  'POST /schedule/getSchedule': 'InspectionScheduleController.getSchedule',
+  'POST /schedule/getSchedule': 'InspectionScheduleController.getSchedule', 
   'POST /schedule/getListSchedule': 'InspectionScheduleController.getListSchedule',
-
+  
   // Order
   'POST /order/setOrder': 'OrderController.setOrder',
   'POST /order/getOrders': 'OrderController.getOrders',
   'POST /order/getOrdersOfFactory': 'OrderController.getOrdersOfFactory',
   'POST /order/changeOrderStatus': 'OrderController.changeOrderStatus',
-
+  
 
   // Test  
   'POST /test/getAllHistoryOfCylinder': 'TestController.getAllHistoryOfCylinder',
@@ -206,11 +198,11 @@ module.exports.routes = {
 
   // Region Company
   'POST /regionCompany/createRegion': 'UserController.createRegion',
-  'GET /regionCompany/getListRegion': 'UserController.getListRegion',
+  'GET /regionCompany/getListRegion': 'UserController.getListRegion', 
 
   // Station
   'POST /station/createStation': 'UserController.createStation',
-  'GET /station/getListStation': 'UserController.getListStation',
+  'GET /station/getListStation': 'UserController.getListStation', 
 
   // Customer
   'POST /customer/info': 'CustomerController.createInfo',
